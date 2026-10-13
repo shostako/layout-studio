@@ -10,6 +10,7 @@
 // - ストッカーは容量の数で満杯。満杯になったら AGV を呼び、来るまで受けない。
 // - AGV は 1 台。通路の最初の頂点（いちばん先に描いた通路の始点）を出入り口にし、呼ばれた順にストッカーへ行き、
 //   積み替えの時間のあいだ止まって満杯の台車を空の台車と替え、出入り口へ運び出す。通路は両方向に走れる。
+//   一方通行（oneWay）の通路は頂点の順にだけ走る。帰りは行きの逆ではなく、乗り場から出入り口への近道を別に探す。
 //   ストッカーへは、いちばん近い中心線の上の点（乗り場）まで行く。
 
 import { linkSegment } from './flow'
@@ -42,6 +43,7 @@ export type FlowModel = {
   home: Point | null // AGV の出入り口
   docks: Record<string, Point> // ストッカーの乗り場（通路の上）
   routes: Record<string, Point[] | null> // 出入り口からストッカーの乗り場への道。つながっていなければ null
+  returns: Record<string, Point[] | null> // 乗り場から出入り口への帰り道。つながっていなければ null
   warnings: string[]
 }
 
@@ -109,11 +111,15 @@ export function prepareFlow(scene: Scene): FlowModel {
   let home: Point | null = null
   const docks: Record<string, Point> = {}
   const routes: Record<string, Point[] | null> = {}
+  const returns: Record<string, Point[] | null> = {}
   const first = scene.aisles[0]
   if (stockers.length > 0) {
     if (!first) {
       warnings.push('AGV の通路がありません。満杯の台車を運び出せません')
-      for (const id of stockers) routes[id] = null
+      for (const id of stockers) {
+        routes[id] = null
+        returns[id] = null
+      }
     } else {
       home = { ...first.points[0]! }
       const centers = stockers.map((id) => ({ x: byId.get(id)!.x, y: byId.get(id)!.y }))
@@ -123,11 +129,13 @@ export function prepareFlow(scene: Scene): FlowModel {
         const n = attach[i + 1]!
         docks[id] = net.nodes[n]!
         routes[id] = h !== null && n !== null ? shortestPath(net, h, n) : null
+        returns[id] = h !== null && n !== null ? shortestPath(net, n, h) : null
         if (!routes[id]) warnings.push(`${name(id)} へ、AGV の出入り口から通路がつながっていません`)
+        else if (!returns[id]) warnings.push(`${name(id)} から AGV の出入り口へ帰る通路がありません（一方通行の向きを確かめてください）`)
       })
     }
   }
-  return { sources, next, stockers, isStocker, segments, home, docks, routes, warnings }
+  return { sources, next, stockers, isStocker, segments, home, docks, routes, returns, warnings }
 }
 
 export function initialFlow(model: FlowModel): FlowState {
@@ -229,12 +237,12 @@ function step(model: FlowModel, params: FlowParams, st: FlowState, dt: number): 
   while (left > 0) {
     const agv = st.agv
     if (agv.phase === 'idle') {
-      const k = st.requests.findIndex((id) => model.routes[id])
+      const k = st.requests.findIndex((id) => model.routes[id] && model.returns[id])
       if (k < 0) break
       const [id] = st.requests.splice(k, 1)
       st.agv = { phase: 'going', stocker: id!, s: 0 }
     } else if (agv.phase === 'going' || agv.phase === 'returning') {
-      const len = pathLength(model.routes[agv.stocker]!)
+      const len = pathLength((agv.phase === 'going' ? model.routes : model.returns)[agv.stocker]!)
       const need = (len - agv.s) / params.agvSpeed
       if (need > left) {
         agv.s += params.agvSpeed * left
@@ -298,10 +306,7 @@ export function flowView(model: FlowModel, state: FlowState): FlowView {
       const len = pathLength(route)
       if (a.phase === 'going') agv = { ...pointAlong(route, a.s), loaded: false }
       else if (a.phase === 'loading') agv = { ...pointAlong(route, len), loaded: false }
-      else {
-        const p = pointAlong(route, len - a.s)
-        agv = { at: p.at, angle: p.angle + Math.PI, loaded: true }
-      }
+      else agv = { ...pointAlong(model.returns[a.stocker]!, a.s), loaded: true }
     }
   }
   return { parts, agv }

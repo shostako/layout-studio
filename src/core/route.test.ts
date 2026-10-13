@@ -44,6 +44,19 @@ describe('buildRouteNet と shortestPath', () => {
     expect(pathLength(shortestPath(net, attach[1]!, attach[0]!)!)).toBe(4000)
   })
 
+  it('一方通行の通路は頂点の順にだけ走る。帰りは別の道を探す', () => {
+    // 上の辺を右へ、下の辺を左へ（時計回りの一方通行の周回）
+    const loop = { ...aisle('loop', [[0, 0], [10000, 0], [10000, 4000], [0, 4000]], true), oneWay: true }
+    const { net, attach } = buildRouteNet([loop], [{ x: 0, y: 0 }, { x: 0, y: 4000 }])
+    expect(pathLength(shortestPath(net, attach[0]!, attach[1]!)!)).toBe(24000)
+    expect(pathLength(shortestPath(net, attach[1]!, attach[0]!)!)).toBe(4000)
+    // 逆向きには乗り継げない
+    const one = { ...aisle('a', [[0, 0], [10000, 0]]), oneWay: true }
+    const r = buildRouteNet([one], [{ x: 0, y: 0 }, { x: 10000, y: 0 }])
+    expect(shortestPath(r.net, r.attach[0]!, r.attach[1]!)).not.toBeNull()
+    expect(shortestPath(r.net, r.attach[1]!, r.attach[0]!)).toBeNull()
+  })
+
   it('網の外の点は、いちばん近い中心線の上の点（乗り場）で乗る', () => {
     const { net, attach } = buildRouteNet([aisle('a', [[0, 0], [10000, 0]])], [{ x: 0, y: 0 }, { x: 7000, y: 2500 }])
     expect(net.nodes[attach[1]!]).toEqual({ x: 7000, y: 0 })

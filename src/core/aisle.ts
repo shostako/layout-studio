@@ -10,6 +10,7 @@ export type Aisle = {
   points: Point[] // 中心線の頂点
   width: number // 通路の幅（mm）
   closed: boolean // 周回（最後と最初の頂点を結ぶ）
+  oneWay?: boolean // 一方通行。true なら AGV は頂点の順（points[0] → points[1] → …）にだけ走る。無ければ両方向
 }
 
 // 新しく描く通路の幅の最初の値（mm）。架空の目安で、描く前にも描いた後にも変えられる
@@ -26,6 +27,7 @@ export function checkAisle(a: Aisle): string | null {
   if (typeof a.name !== 'string' || !a.name.trim()) return `通路 ${a.id} の名前が空です`
   if (!(typeof a.width === 'number' && a.width > 0 && Number.isFinite(a.width))) return '通路の幅は正の数にしてください'
   if (typeof a.closed !== 'boolean') return `通路 ${a.id} の closed が真偽値ではありません`
+  if (a.oneWay !== undefined && typeof a.oneWay !== 'boolean') return `通路 ${a.id} の oneWay が真偽値ではありません`
   if (!Array.isArray(a.points)) return `通路 ${a.id} の頂点（points）がありません`
   const pts = a.points
   if (pts.length < 2) return '通路は 2 つ以上の頂点で描いてください'

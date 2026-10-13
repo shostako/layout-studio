@@ -64,6 +64,47 @@ describe('prepareFlow', () => {
   })
 })
 
+describe('一方通行の通路', () => {
+  // 出入り口 (0, 3000) から右へ行き、下を回って左へ戻る時計回りの周回
+  const loop: Aisle = {
+    id: 'a',
+    name: 'a',
+    points: [{ x: 0, y: 3000 }, { x: 10000, y: 3000 }, { x: 10000, y: 6000 }, { x: 0, y: 6000 }],
+    width: 1500,
+    closed: true,
+    oneWay: true,
+  }
+
+  it('帰りは行きの逆でなく、向きに沿った別の道', () => {
+    const m = prepareFlow(cell(undefined, [loop]))
+    expect(m.routes.s1).toEqual([{ x: 0, y: 3000 }, { x: 4000, y: 3000 }])
+    // s2 の乗り場 (6000, 3000) を通り、右へ回って出入り口へ
+    expect(m.returns.s1).toEqual([{ x: 4000, y: 3000 }, { x: 6000, y: 3000 }, { x: 10000, y: 3000 }, { x: 10000, y: 6000 }, { x: 0, y: 6000 }, { x: 0, y: 3000 }])
+    expect(m.warnings).toEqual([])
+  })
+
+  it('帰りの時間は帰り道の長さで決まり、帰りの AGV は帰り道の向きを向く', () => {
+    const m = prepareFlow(cell(undefined, [loop]))
+    // 3 秒で s1 が満杯 → 行き 4 秒 → 積み替え 2 秒 → 帰り 22 秒
+    let st = stepFlow(m, { ...P, stockerCapacity: 3 }, initialFlow(m), 3 + 4 + 2 + 1)
+    expect(st.agv.phase).toBe('returning')
+    const v = flowView(m, st).agv!
+    expect(v.loaded).toBe(true)
+    expect(v.angle).toBeCloseTo(0)
+    st = stepFlow(m, P, st, 22)
+    expect(st.carts).toBe(1)
+  })
+
+  it('帰れない向きなら知らせ、そのストッカーには行かない', () => {
+    const one: Aisle = { id: 'a', name: 'a', points: [{ x: 0, y: 3000 }, { x: 10000, y: 3000 }], width: 1500, closed: false, oneWay: true }
+    const { model, state } = run(cell(undefined, [one]), 20)
+    expect(model.returns.s1).toBeNull()
+    expect(model.warnings).toContain('s1 から AGV の出入り口へ帰る通路がありません（一方通行の向きを確かめてください）')
+    expect(state.agv.phase).toBe('idle')
+    expect(state.carts).toBe(0)
+  })
+})
+
 describe('stepFlow', () => {
   it('サイクル時間ごとに 1 個生まれ、ストッカーに溜まる。元の状態は変えない', () => {
     const model = prepareFlow(cell())

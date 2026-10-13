@@ -129,6 +129,19 @@ describe('通路のコマンド', () => {
     expect(err(s, { type: 'updateAisle', ids: [], changes: { width: 1000 } })).toMatch('対象の通路')
   })
 
+  it('一方通行は addAisle で持ち越し、updateAisle で付け外しする。両方向の通路は項目を持たない', () => {
+    let s = ok(createEmptyScene(), { type: 'addAisle', aisle: { ...ell, oneWay: true } })
+    expect(s.aisles[0]!.oneWay).toBe(true)
+    s = ok(s, { type: 'updateAisle', ids: ['aisle-1'], changes: { oneWay: false } })
+    expect('oneWay' in s.aisles[0]!).toBe(false)
+    s = ok(s, { type: 'updateAisle', ids: ['aisle-1'], changes: { oneWay: true } })
+    expect(s.aisles[0]!.oneWay).toBe(true)
+    expect(err(s, { type: 'updateAisle', ids: ['aisle-1'], changes: { oneWay: 'yes' as unknown as boolean } })).toMatch('一方通行')
+    expect(checkAisle({ ...ell, oneWay: 1 as unknown as boolean })).toMatch('oneWay')
+    const r = parseScene(serializeScene(s))
+    expect(r.ok && r.scene).toEqual(s)
+  })
+
   it('removeAisle は通路だけを消す', () => {
     let s = ok(createEmptyScene(), { type: 'addAisle', aisle: ell })
     s = ok(s, { type: 'removeAisle', ids: ['aisle-1'] })
@@ -142,6 +155,11 @@ describe('ファイルの通路', () => {
     const s = ok(createEmptyScene(), { type: 'addAisle', aisle: { ...ell, closed: true } })
     const r = parseScene(serializeScene(s))
     expect(r.ok && r.scene).toEqual(s)
+  })
+
+  it('版 6 のファイルは、通路を両方向のまま読む', () => {
+    const r = parseScene(JSON.stringify({ ...createEmptyScene(), version: 6, aisles: [ell] }))
+    expect(r.ok && r.scene).toEqual({ ...createEmptyScene(), aisles: [ell] })
   })
 
   it('版 2 のファイルは通路なしで読む', () => {
