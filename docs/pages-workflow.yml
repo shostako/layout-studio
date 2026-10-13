@@ -1,0 +1,45 @@
+# GitHub Pages でアプリを配るワークフロー。
+# Claude の GitHub App には workflows 権限が無く、.github/workflows/ へは Claude から置けない。
+# ショスタコが GitHub の画面で .github/workflows/pages.yml として作り、この中身を貼る（手順は docs/pages.md）。
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 続けて push されたら、古い配りは待たずに新しい方だけ配る
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # 手で走らせるとき（workflow_dispatch）は別のブランチも選べてしまうので、main のときだけ配る
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 作り方は scripts/build.sh にまとめてある（変えるときはそちらを直し、この YAML は触らない）
+      - run: bash scripts/build.sh
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
