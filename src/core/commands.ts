@@ -20,7 +20,7 @@ export type Command =
   | { type: 'moveBackground'; dx: number; dy: number } // 背景をずらす（mm）
   | { type: 'setSite'; site: Site | null } // 敷地の外形を描く・差し替える・消す（null）
   | { type: 'addAisle'; aisle: Aisle } // AGV の通路を描く。id は呼ぶ側が決める（nextAisleId）
-  | { type: 'updateAisle'; ids: string[]; changes: AisleChanges } // 通路の名前・幅を変える。中心線は動かさない
+  | { type: 'updateAisle'; ids: string[]; changes: AisleChanges } // 通路の名前・幅・一方通行を変える。中心線は動かさない（向きを逆にするのは setAislePoints で頂点を逆順に）
   | { type: 'removeAisle'; ids: string[] } // 通路を消す
   | { type: 'moveAisle'; ids: string[]; dx: number; dy: number } // 通路を中心線ごとずらす（mm）
   | { type: 'setAislePoints'; id: string; points: Point[] } // 通路の中心線の頂点を差し替える（頂点を動かす・足す・消す）。周回かどうかは変えない
@@ -35,7 +35,7 @@ export type Command =
 export type EquipmentChanges = { name?: string; width?: number; depth?: number; color?: string; clearance?: Partial<Clearance> }
 
 // updateAisle で変えられる項目。書いたものだけ変える
-export type AisleChanges = { name?: string; width?: number }
+export type AisleChanges = { name?: string; width?: number; oneWay?: boolean }
 
 export type CommandResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
@@ -256,7 +256,7 @@ function addAisle(scene: Scene, a: Aisle): CommandResult {
   const bad = checkAisle(a)
   if (bad) return fail(bad)
   if (scene.aisles.some((x) => x.id === a.id)) return fail(`通路の id が重複しています: ${a.id}`)
-  const aisle: Aisle = { id: a.id, name: a.name.trim(), points: a.points.map(({ x, y }) => ({ x, y })), width: a.width, closed: a.closed }
+  const aisle: Aisle = { id: a.id, name: a.name.trim(), points: a.points.map(({ x, y }) => ({ x, y })), width: a.width, closed: a.closed, ...(a.oneWay ? { oneWay: true } : {}) }
   return { ok: true, scene: { ...scene, aisles: [...scene.aisles, aisle] } }
 }
 
@@ -272,15 +272,23 @@ function updateAisle(scene: Scene, ids: string[], changes: AisleChanges): Comman
   const bad = checkAisleIds(scene, ids)
   if (bad) return fail(bad)
   if (typeof changes !== 'object' || changes === null) return fail('変える項目がありません')
-  const { name, width } = changes
-  if (name === undefined && width === undefined) return fail('変える項目がありません')
+  const { name, width, oneWay } = changes
+  if (name === undefined && width === undefined && oneWay === undefined) return fail('変える項目がありません')
+  if (oneWay !== undefined && typeof oneWay !== 'boolean') return fail('一方通行は true か false にしてください')
   if (name !== undefined && (typeof name !== 'string' || !name.trim())) return fail('名前を入れてください')
   if (width !== undefined && !(typeof width === 'number' && width > 0 && Number.isFinite(width))) return fail('通路の幅は正の数にしてください')
   const set: AisleChanges = {}
   if (name !== undefined) set.name = name.trim()
   if (width !== undefined) set.width = width
   const targets = new Set(ids)
-  return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (targets.has(a.id) ? { ...a, ...set } : a)) } }
+  const change = (a: Aisle): Aisle => {
+    const b = { ...a, ...set }
+    // 両方向は項目を持たない（版 6 までのファイルと同じ形）
+    if (oneWay === true) b.oneWay = true
+    else if (oneWay === false) delete b.oneWay
+    return b
+  }
+  return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (targets.has(a.id) ? change(a) : a)) } }
 }
 
 function removeAisle(scene: Scene, ids: string[]): CommandResult {

@@ -27,6 +27,8 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
   4: (d) => ({ ...d, links: [] }),
   // 版 6 で流れの再生の数値を足した。版 5 は架空の目安（それまで固定だった値）で読む
   5: (d) => ({ ...d, flow: { ...DEFAULT_FLOW_SETTINGS } }),
+  // 版 7 で通路の一方通行（oneWay）を足した。版 6 の通路はどれも両方向なので、そのまま読む
+  6: (d) => d,
 }
 
 export function serializeScene(scene: Scene): string {

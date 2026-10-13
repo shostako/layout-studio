@@ -48,11 +48,39 @@ const pathOf = (pts: readonly Point[], close: boolean) =>
   pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x} ${p.y}`).join('') + (close && pts.length > 2 ? 'Z' : '')
 const fmtM = (mm: number) => `${(mm / 1000).toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m`
 
-// 通路の帯（幅を太さにした線）と中心線
-function drawAisle(a: Pick<Aisle, 'points' | 'width' | 'closed'>, cls: string): SVGGElement {
+// 一方通行の矢印の間隔（mm）。辺ごとに少なくとも 1 つ、辺の中ほどに置く
+const ARROW_PITCH = 5000
+
+// 一方通行の向きの矢印（く の字）。大きさは通路の幅に合わせる
+function arrowsPath(a: Pick<Aisle, 'points' | 'width' | 'closed'>): string {
+  const pts = a.closed && a.points.length > 2 ? [...a.points, a.points[0]!] : a.points
+  const r = a.width * 0.3
+  let d = ''
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p = pts[i]!
+    const q = pts[i + 1]!
+    const len = Math.hypot(q.x - p.x, q.y - p.y)
+    if (len < r * 2) continue
+    const ux = (q.x - p.x) / len
+    const uy = (q.y - p.y) / len
+    const n = Math.max(1, Math.floor(len / ARROW_PITCH))
+    for (let k = 0; k < n; k++) {
+      const t = (len * (k + 0.5)) / n
+      const tip = { x: p.x + ux * (t + r / 2), y: p.y + uy * (t + r / 2) }
+      const bx = tip.x - ux * r
+      const by = tip.y - uy * r
+      d += `M${bx - uy * r} ${by + ux * r}L${tip.x} ${tip.y}L${bx + uy * r} ${by - ux * r}`
+    }
+  }
+  return d
+}
+
+// 通路の帯（幅を太さにした線）と中心線。一方通行なら向きの矢印
+function drawAisle(a: Pick<Aisle, 'points' | 'width' | 'closed' | 'oneWay'>, cls: string): SVGGElement {
   const g = svg('g', { class: cls })
   const d = pathOf(a.points, a.closed)
   g.append(svg('path', { class: 'aisle-body', d, 'stroke-width': a.width }), svg('path', { class: 'aisle-center', d }))
+  if (a.oneWay) g.append(svg('path', { class: 'aisle-arrow', d: arrowsPath(a) }))
   return g
 }
 
@@ -114,6 +142,20 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
   widthInput.step = '100'
   mkProp('名前', nameInput)
   mkProp('幅 mm', widthInput)
+  // 一方通行と、その向き（頂点の順）を逆にする
+  const oneWayRow = document.createElement('div')
+  oneWayRow.className = 'actions'
+  const oneWayLabel = document.createElement('label')
+  const oneWayInput = document.createElement('input')
+  oneWayInput.type = 'checkbox'
+  oneWayLabel.title = 'AGV は頂点の順（描いた順）にだけ走る'
+  oneWayLabel.append(oneWayInput, ' 一方通行')
+  const reverseBtn = document.createElement('button')
+  reverseBtn.type = 'button'
+  reverseBtn.textContent = '向きを逆に'
+  reverseBtn.title = '頂点の順を逆にする（一方通行の向きが変わる）'
+  oneWayRow.append(oneWayLabel, reverseBtn)
+  props.append(oneWayRow)
   const row = document.createElement('div')
   row.className = 'actions'
   const delBtn = document.createElement('button')
@@ -164,12 +206,20 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
       if (e.key === 'Enter') i.blur()
     })
   }
-  const updateSelection = (changes: { name?: string; width?: number }) => {
+  const updateSelection = (changes: { name?: string; width?: number; oneWay?: boolean }) => {
     const ids = (editIds.length ? editIds : liveSelection()).filter((id) => editor.scene().aisles.some((a) => a.id === id))
     if (ids.length) editor.run({ type: 'updateAisle', ids, changes })
   }
   nameInput.addEventListener('change', () => updateSelection({ name: nameInput.value }))
   widthInput.addEventListener('change', () => updateSelection({ width: Number(widthInput.value) }))
+  oneWayInput.addEventListener('change', () => {
+    editIds = liveSelection()
+    updateSelection({ oneWay: oneWayInput.checked })
+  })
+  reverseBtn.addEventListener('click', () => {
+    const a = selectedAisle()
+    if (a) editor.run({ type: 'setAislePoints', id: a.id, points: [...a.points].reverse() })
+  })
   const removeSelection = () => {
     const ids = liveSelection()
     if (ids.length && editor.run({ type: 'removeAisle', ids })) select([])
@@ -420,8 +470,10 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     if (first) {
       if (document.activeElement !== nameInput) nameInput.value = first.name
       if (document.activeElement !== widthInput) widthInput.value = String(first.width)
+      oneWayInput.checked = first.oneWay === true
+      reverseBtn.disabled = first.oneWay !== true
       selInfo.textContent =
-        `選択中: ${first.name}（${first.closed ? '周回、' : ''}頂点 ${first.points.length}、長さ ${fmtM(aisleLength(first))}）` +
+        `選択中: ${first.name}（${first.closed ? '周回、' : ''}${first.oneWay ? '一方通行、' : ''}頂点 ${first.points.length}、長さ ${fmtM(aisleLength(first))}）` +
         (vertex !== null ? `　頂点 ${vertex + 1} を選択中（Delete で消す）` : '')
     }
   }

@@ -6,8 +6,8 @@ import type { Link } from './flow'
 import type { Site } from './site'
 
 // 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）、
-// 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）を足した
-export const SCENE_VERSION = 6
+// 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）、版 7 で通路の一方通行（oneWay）を足した
+export const SCENE_VERSION = 7
 
 export type Rotation = 0 | 90 | 180 | 270
 

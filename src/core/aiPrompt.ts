@@ -78,6 +78,7 @@ export function summarizeScene(scene: Scene): SceneSummary {
       name: a.name,
       width: r(a.width),
       closed: a.closed,
+      oneWay: a.oneWay === true,
       points: a.points.map((p) => ({ x: r(p.x), y: r(p.y) })),
       lengthMm: r(aisleLength(a)),
     })),
@@ -108,7 +109,8 @@ export function aiInstructions(): string {
 - bounds は回転を考えた本体の外接の長方形（left, top, right, bottom）。
 - clearance は保守用の余白（回転 0 のときの上・右・下・左の辺から外へ取る幅）。設備と一緒に回る。
 - 他の設備の本体が余白に入ると注意になる。余白どうしの重なりはかまわない。
-- 通路（AGV の通路）は中心線の頂点の列と幅。closed が true なら周回。
+- 通路（AGV の通路）は中心線の頂点の列と幅。closed が true なら周回。oneWay が true なら一方通行で、AGV は頂点の順（points[0] → points[1] → …）にだけ走る。
+- AGV の出入り口は、いちばん先の通路の points[0]。AGV は出入り口からストッカーの乗り場（いちばん近い中心線の上の点）へ行き、別に探した近道で出入り口へ帰る。
 - links は工程のつなぎ（from の設備から to の設備へものが流れる）。輪にはできない。
 
 ## 返し方
@@ -129,8 +131,8 @@ export function aiInstructions(): string {
 - { "type": "update", "ids": ["eq-1"], "changes": { "name": "成形機 A", "width": 6500, "depth": 2200, "color": "#5b8bd9", "clearance": { "top": 800 } } }
   名前・寸法・色（#rrggbb）・余白を変える。書いた項目だけ変わる
 - { "type": "addAisle", "points": [ { "x": 0, "y": 8000 }, { "x": 20000, "y": 8000 } ] }
-  通路を描く。省ける項目: width（1500）、closed（false）、id、name
-- { "type": "updateAisle", "ids": ["aisle-1"], "changes": { "name": "主通路", "width": 1800 } } 通路の名前・幅を変える
+  通路を描く。省ける項目: width（1500）、closed（false）、oneWay（false）、id、name
+- { "type": "updateAisle", "ids": ["aisle-1"], "changes": { "name": "主通路", "width": 1800, "oneWay": true } } 通路の名前・幅・一方通行を変える（向きを逆にするには setAislePoints で頂点を逆順に）
 - { "type": "moveAisle", "ids": ["aisle-1"], "dx": 0, "dy": 500 } 通路を中心線ごとずらす
 - { "type": "setAislePoints", "id": "aisle-1", "points": [ ... ] } 通路の中心線の頂点を差し替える
 - { "type": "removeAisle", "ids": ["aisle-1"] } 通路を消す

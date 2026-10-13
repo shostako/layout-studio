@@ -20,7 +20,7 @@ export type AiReply = { message: string; commands: unknown[] }
 // AI が出せる指示。画面のコマンドと同じ形（type と項目名）で、置く・描く・写すだけは id と名前を省ける形にした
 export type AiCommand =
   | { type: 'place'; kind: string; x: number; y: number; id?: string; name?: string; width?: number; depth?: number; rotation?: Rotation }
-  | { type: 'addAisle'; points: Point[]; width?: number; closed?: boolean; id?: string; name?: string }
+  | { type: 'addAisle'; points: Point[]; width?: number; closed?: boolean; oneWay?: boolean; id?: string; name?: string }
   | { type: 'duplicate'; ids: string[]; dx: number; dy: number; newIds?: string[] }
   | Extract<Command, { type: (typeof PASS_TYPES)[number] }>
 
@@ -218,13 +218,14 @@ function place(scene: Scene, r: Record<string, unknown>): ToCommand {
   return { ok: true, command: { type: 'add', equipment } }
 }
 
-// 通路を描く。幅を省けば最初の値、周回を省けば開いた通路
+// 通路を描く。幅を省けば最初の値、周回を省けば開いた通路、一方通行を省けば両方向
 function addAisle(scene: Scene, r: Record<string, unknown>): ToCommand {
   const no = (error: string): ToCommand => ({ ok: false, error })
   const bad = checkPoints(r.points)
   if (bad) return no(`points: ${bad}`)
   if (r.width !== undefined && typeof r.width !== 'number') return no('width は数にしてください')
   if (r.closed !== undefined && typeof r.closed !== 'boolean') return no('closed は true か false にしてください')
+  if (r.oneWay !== undefined && typeof r.oneWay !== 'boolean') return no('oneWay は true か false にしてください')
   if (r.id !== undefined && checkField(r.id, 'id')) return no('id は文字列にしてください')
   if (r.name !== undefined && typeof r.name !== 'string') return no('name は文字列にしてください')
   const aisle: Aisle = {
@@ -233,6 +234,7 @@ function addAisle(scene: Scene, r: Record<string, unknown>): ToCommand {
     points: (r.points as Point[]).map(({ x, y }) => ({ x, y })),
     width: (r.width as number | undefined) ?? DEFAULT_AISLE_WIDTH,
     closed: (r.closed as boolean | undefined) ?? false,
+    ...(r.oneWay === true ? { oneWay: true } : {}),
   }
   return { ok: true, command: { type: 'addAisle', aisle } }
 }
@@ -278,11 +280,14 @@ export function describeCommand(scene: Scene, cmd: Command): string {
     }
     case 'addAisle': {
       const a = cmd.aisle
-      return `${a.name} を描く（幅 ${mm(a.width)}、頂点 ${a.points.length}${a.closed ? '、周回' : ''}）`
+      return `${a.name} を描く（幅 ${mm(a.width)}、頂点 ${a.points.length}${a.closed ? '、周回' : ''}${a.oneWay ? '、一方通行' : ''}）`
     }
     case 'updateAisle': {
       const c = cmd.changes
+      const way = c.oneWay !== undefined ? `${c.oneWay ? '一方通行' : '両方向'}にする` : ''
       const parts = [c.name !== undefined ? `名前「${c.name}」` : '', c.width !== undefined ? `幅 ${mm(c.width)}` : ''].filter(Boolean)
+      if (!parts.length) return `${aisleNames(cmd.ids)} を${way}`
+      if (way) return `${aisleNames(cmd.ids)} の${parts.join('・')}を変え、${way}`
       return `${aisleNames(cmd.ids)} の${parts.join('・')}を変える`
     }
     case 'removeAisle':

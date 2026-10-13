@@ -51,7 +51,7 @@ try {
   const applied = await call('tools/call', { name: 'apply_commands', arguments: { file, commands } })
   check(applied.result.isError === false, `apply_commands: ${applied.result.content[0].text}`)
   const saved = JSON.parse(readFileSync(file, 'utf8'))
-  check(saved.version === 6 && saved.equipment.length === 1, 'ファイルに書き戻せていない')
+  check(saved.version === 7 && saved.equipment.length === 1, 'ファイルに書き戻せていない')
   const sum = await call('tools/call', { name: 'summarize', arguments: { file } })
   check(JSON.parse(sum.result.content[0].text).scene.equipment[0].id === 'eq-1', 'summarize')
   // 画面の代わり: state を聞かれたら、成形機 1 台の案の束を答える

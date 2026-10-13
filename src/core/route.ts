@@ -1,5 +1,5 @@
 // AGV の道: 通路の中心線をつないだ網と、いちばん短い道。DOM に触らない。
-// 通路は両方向に走れる（DECISIONS.md）。中心線の頂点と、中心線どうしが交わる点・接する点を節にし、
+// 通路はふつう両方向に走れる。一方通行（oneWay）の通路は頂点の順にだけ走る（DECISIONS.md）。中心線の頂点と、中心線どうしが交わる点・接する点を節にし、
 // 節のあいだを中心線に沿って走る。網の外の点（AGV の出入り口、ストッカー）は、いちばん近い中心線の上の点で網に乗せる。
 
 import { aisleSegments, type Aisle } from './aisle'
@@ -51,6 +51,7 @@ function crossings(a: Point, b: Point, c: Point, d: Point): number[] {
 // 通路の網を作る。extra の点はそれぞれ、いちばん近い中心線の上の点で網に乗せ、その節の番号を attach に返す（通路が無ければ null）
 export function buildRouteNet(aisles: readonly Aisle[], extra: readonly Point[] = []): { net: RouteNet; attach: (number | null)[] } {
   const segs = aisles.flatMap((a) => aisleSegments(a))
+  const oneWay = aisles.flatMap((a) => aisleSegments(a).map(() => a.oneWay === true))
   const params: number[][] = segs.map(() => [0, 1])
   for (let i = 0; i < segs.length; i++)
     for (let j = 0; j < segs.length; j++) {
@@ -84,10 +85,11 @@ export function buildRouteNet(aisles: readonly Aisle[], extra: readonly Point[] 
     return n
   }
   const adj: { to: number; w: number }[][] = []
-  const edge = (u: number, v: number, w: number) => {
+  // u から v へ。一方通行でなければ v から u へも
+  const edge = (u: number, v: number, w: number, single: boolean) => {
     while (adj.length <= Math.max(u, v)) adj.push([])
     adj[u]!.push({ to: v, w })
-    adj[v]!.push({ to: u, w })
+    if (!single) adj[v]!.push({ to: u, w })
   }
   for (const [i, [a, b]] of segs.entries()) {
     const ts = [...new Set(params[i]!)].sort((x, y) => x - y)
@@ -96,7 +98,7 @@ export function buildRouteNet(aisles: readonly Aisle[], extra: readonly Point[] 
     for (const t of ts) {
       const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
       const n = nodeAt(p)
-      if (prev !== null && prevP && n !== prev) edge(prev, n, Math.hypot(p.x - prevP.x, p.y - prevP.y))
+      if (prev !== null && prevP && n !== prev) edge(prev, n, Math.hypot(p.x - prevP.x, p.y - prevP.y), oneWay[i]!)
       prev = n
       prevP = p
     }

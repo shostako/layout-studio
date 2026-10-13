@@ -89,6 +89,17 @@ describe('planAiCommands', () => {
     ])
   })
 
+  it('一方通行の通路を描き、付け外しできる', () => {
+    const r = plan(withMachines(1), [
+      { type: 'addAisle', points: [{ x: 0, y: 0 }, { x: 10000, y: 0 }], oneWay: true },
+      { type: 'updateAisle', ids: ['aisle-1'], changes: { oneWay: false } },
+    ])
+    if (!r.ok) throw new Error(r.error)
+    expect(r.steps.map((x) => x.text)).toEqual(['通路 1 を描く（幅 1,500 mm、頂点 2、一方通行）', '通路 1 を両方向にする'])
+    expect('oneWay' in r.scene.aisles[0]!).toBe(false)
+    expect(plan(withMachines(1), [{ type: 'addAisle', points: [{ x: 0, y: 0 }, { x: 1, y: 0 }], oneWay: 'yes' }])).toMatchObject({ ok: false })
+  })
+
   it('duplicate は newIds を省ければ続きの id を振る', () => {
     const r = plan(withMachines(2), [{ type: 'duplicate', ids: ['eq-1', 'eq-2'], dx: 0, dy: 5000 }])
     if (!r.ok) throw new Error(r.error)
