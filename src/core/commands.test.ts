@@ -188,3 +188,37 @@ describe('余白（clearance）', () => {
     expect(after.equipment[0]!.clearance).toEqual(c)
   })
 })
+
+describe('batch', () => {
+  it('順に当て、前の結果に次を当てる', () => {
+    const after = ok(sceneWith(eq('a')), {
+      type: 'batch',
+      commands: [
+        { type: 'move', ids: ['a'], dx: 500, dy: 0 },
+        { type: 'add', equipment: eq('b') },
+        { type: 'move', ids: ['a', 'b'], dx: 0, dy: 100 },
+      ],
+    })
+    expect(after.equipment.map((e) => [e.id, e.x, e.y])).toEqual([
+      ['a', 1500, 2100],
+      ['b', 1000, 2100],
+    ])
+  })
+
+  it('1 つでも断られたら何も当てず、何番目かを理由に添える', () => {
+    const s = sceneWith(eq('a'))
+    const r = applyCommand(s, {
+      type: 'batch',
+      commands: [
+        { type: 'move', ids: ['a'], dx: 500, dy: 0 },
+        { type: 'remove', ids: ['z'] },
+      ],
+    })
+    expect(r).toEqual({ ok: false, error: '2 番目（remove）: 設備が見つかりません: z' })
+    expect(s.equipment[0]!.x).toBe(1000)
+  })
+
+  it('空のまとめは断る', () => {
+    expect(err(sceneWith(), { type: 'batch', commands: [] })).toMatch('ありません')
+  })
+})
