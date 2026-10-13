@@ -1,0 +1,238 @@
+// 敷地の外形: クリックで多角形を描く、寸法で長方形を置く、消す。面積とはみ出しの台数を出す。
+// シーンの変更は editor.run（コマンド）を通す。描いている途中の頂点は画面の状態で、閉じたときに 1 回だけ setSite を出す。
+import type { Canvas } from './canvas'
+import type { Editor, Tool } from './editor'
+import { snapValue } from '../core/placement'
+import { equipmentOutsideSite, rectSite, sceneExtent, siteArea, siteBounds, type Site } from '../core/site'
+import { formatLength, type Point } from '../core/viewport'
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+// 最初の頂点（または直前の頂点）からこの px 以内をクリックしたら閉じる
+const CLOSE_PX = 8
+const MARK_PX = 4
+// 1 坪 = 400/121 m²
+const M2_PER_TSUBO = 400 / 121
+
+function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
+  const el = document.createElementNS(SVG_NS, tag)
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v))
+  return el
+}
+
+// Shift を押している間は、直前の頂点から水平か垂直に限る
+function constrain(a: Point | undefined, p: Point, on: boolean): Point {
+  if (!on || !a) return p
+  return Math.abs(p.x - a.x) >= Math.abs(p.y - a.y) ? { x: p.x, y: a.y } : { x: a.x, y: p.y }
+}
+
+const fmtArea = (mm2: number) => {
+  const m2 = mm2 / 1e6
+  return `${m2.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m²（${(m2 / M2_PER_TSUBO).toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} 坪）`
+}
+const pathOf = (pts: readonly Point[], close: boolean) =>
+  pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x} ${p.y}`).join('') + (close && pts.length > 2 ? 'Z' : '')
+
+export function mountSite(canvas: Canvas, editor: Editor): void {
+  // ---- 外形を描く（設備より下） ----
+  const outline = svg('path', { class: 'site' })
+  canvas.world.prepend(outline)
+  let drawn: Site | null | undefined
+
+  // ---- 左の欄 ----
+  const h = document.createElement('h2')
+  h.textContent = '敷地'
+  const box = document.createElement('div')
+  box.className = 'site-panel'
+  const info = document.createElement('div')
+  info.className = 'info'
+  const row = document.createElement('div')
+  row.className = 'actions'
+  const mk = (label: string, title: string, onClick: () => void) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = label
+    b.title = title
+    b.addEventListener('click', onClick)
+    row.append(b)
+    return b
+  }
+  const drawBtn = mk('外形を描く', 'クリックで頂点を置き、最初の頂点のクリックか Enter で閉じる', () => startDraw())
+  const clearBtn = mk('消す', '敷地の外形を消す（元に戻すで戻せる）', () => editor.run({ type: 'setSite', site: null }))
+
+  // 寸法を入れて、原点を左上にした長方形を置く
+  const rectForm = document.createElement('form')
+  rectForm.className = 'site-rect-form'
+  // 矢印キーは 100 mm 刻みにしたいが、刻みに乗らない寸法も受け付ける（確かめは submit で自分でする）
+  rectForm.noValidate = true
+  const mkNum = (value: number, title: string) => {
+    const input = document.createElement('input')
+    input.type = 'number'
+    input.min = '1'
+    input.step = '100'
+    input.value = String(value)
+    input.title = title
+    return input
+  }
+  const rw = mkNum(30000, '敷地の幅（x 方向、mm）')
+  const rd = mkNum(20000, '敷地の奥行（y 方向、mm）')
+  const rectBtn = document.createElement('button')
+  rectBtn.type = 'submit'
+  rectBtn.textContent = '長方形'
+  rectBtn.title = '原点 (0, 0) を左上に、この寸法の長方形を敷地にする'
+  rectForm.append(rw, '×', rd, ' mm ', rectBtn)
+  const hint = document.createElement('div')
+  hint.className = 'hint'
+  box.append(info, row, rectForm, hint)
+
+  // 背景の欄の下、ひな形の上に置く
+  const templatesHeading = canvas.side.querySelector('h2 + .templates')?.previousElementSibling
+  if (templatesHeading) canvas.side.insertBefore(h, templatesHeading)
+  else canvas.side.append(h)
+  h.after(box)
+
+  const fit = () => {
+    canvas.setHome(sceneExtent(editor.scene()))
+    canvas.fitHome()
+  }
+  rectForm.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const w = Number(rw.value)
+    const d = Number(rd.value)
+    if (!(w > 0 && d > 0 && Number.isFinite(w) && Number.isFinite(d))) {
+      hint.textContent = '幅と奥行は正の数（mm）にしてください'
+      return
+    }
+    if (editor.run({ type: 'setSite', site: rectSite(0, 0, w, d) })) {
+      hint.textContent = ''
+      fit()
+    }
+  })
+
+  // ---- 外形を描く道具 ----
+  let pts: Point[] = []
+  let shift = false
+  const scale = () => canvas.getViewport().scale
+  // カーソルの位置を、スナップと Shift を当てた頂点の候補にする
+  const candidate = (at: Point, shiftKey: boolean): Point => {
+    const step = editor.snapStep()
+    return constrain(pts[pts.length - 1], { x: snapValue(at.x, step), y: snapValue(at.y, step) }, shiftKey)
+  }
+  const near = (a: Point | undefined, b: Point) => !!a && Math.hypot(a.x - b.x, a.y - b.y) * scale() <= CLOSE_PX
+  const showProgress = () => {
+    const area = pts.length >= 3 ? `　面積 ${fmtArea(siteArea({ points: pts }))}` : ''
+    hint.textContent =
+      `頂点 ${pts.length}${area}。` +
+      (pts.length >= 3 ? '最初の頂点をクリックか Enter で閉じる。' : 'クリックで頂点を置く。') +
+      'Shift で水平・垂直、Backspace で 1 つ戻す、Esc でやめる'
+  }
+  const finish = () => {
+    if (pts.length < 3) return
+    if (editor.run({ type: 'setSite', site: { points: pts } })) {
+      const done = pts
+      editor.endTool(drawTool)
+      hint.textContent = `外形を描きました（頂点 ${done.length}）`
+      fit()
+    } else {
+      // 辺が交わっているなど。理由は editor の欄に出る。Backspace で直せるよう描き続ける
+      hint.textContent = '閉じられませんでした（理由は下の欄）。Backspace で頂点を戻して直してください'
+    }
+  }
+  const drawTool: Tool = {
+    pointerDown(at, e) {
+      const p = candidate(at, e.shiftKey)
+      if (pts.length >= 3 && near(pts[0], p)) return finish()
+      // ダブルクリックの 2 回目（直前の頂点と同じ所）も閉じる合図にする
+      if (near(pts[pts.length - 1], p)) {
+        if (pts.length >= 3) finish()
+        return
+      }
+      pts = [...pts, p]
+      showProgress()
+    },
+    overlay(pointer) {
+      const out: SVGElement[] = []
+      if (pts.length === 0) {
+        if (pointer) {
+          const p = candidate(pointer, false)
+          const r = MARK_PX / scale()
+          out.push(svg('path', { class: 'pick-mark', d: `M${p.x - r} ${p.y}H${p.x + r}M${p.x} ${p.y - r}V${p.y + r}` }))
+        }
+        return out
+      }
+      const next = pointer ? candidate(pointer, shift) : null
+      const closing = !!next && pts.length >= 3 && near(pts[0], next)
+      const live = next && !closing ? [...pts, next] : pts
+      out.push(svg('path', { class: 'site drawing', d: pathOf(live, true) }))
+      const r = MARK_PX / scale()
+      for (const [i, p] of pts.entries())
+        out.push(svg('circle', { class: i === 0 && closing ? 'site-vertex closing' : 'site-vertex', cx: p.x, cy: p.y, r: i === 0 && closing ? r * 2 : r }))
+      return out
+    },
+    ended() {
+      pts = []
+      shift = false
+      drawBtn.classList.remove('active')
+      if (hint.textContent?.startsWith('頂点') || hint.textContent?.startsWith('閉じられ')) hint.textContent = ''
+    },
+  }
+  const startDraw = () => {
+    editor.startTool(drawTool)
+    drawBtn.classList.add('active')
+    pts = []
+    hint.textContent = 'クリックで頂点を置く（スナップの間隔に乗る）。Esc でやめる'
+  }
+  const drawing = () => drawBtn.classList.contains('active')
+  window.addEventListener('keydown', (e) => {
+    if (!drawing()) return
+    if (e.key === 'Shift') {
+      shift = true
+      editor.render()
+      return
+    }
+    const t = e.target
+    if (t instanceof HTMLElement && t.closest('input, select, textarea')) return
+    if (e.key === 'Enter') finish()
+    else if (e.key === 'Backspace' || e.key === 'Delete') {
+      pts = pts.slice(0, -1)
+      showProgress()
+      editor.render()
+    } else return
+    e.preventDefault()
+  })
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift' && drawing()) {
+      shift = false
+      editor.render()
+    }
+  })
+  canvas.svg.addEventListener('pointermove', (e) => {
+    shift = e.shiftKey
+  })
+
+  // ---- シーンに合わせて描き直す ----
+  function paint() {
+    const scene = editor.scene()
+    const site = scene.site
+    if (site !== drawn) {
+      drawn = site
+      outline.setAttribute('d', site ? pathOf(site.points, true) : '')
+      // 元に戻すで敷地が変わっても「全体」が合うようにする（表示は動かさない）
+      canvas.setHome(sceneExtent(scene))
+    }
+    outline.style.display = site ? '' : 'none'
+    if (site) {
+      const b = siteBounds(site)
+      const out = equipmentOutsideSite(scene)
+      info.textContent =
+        `面積 ${fmtArea(siteArea(site))}　外寸 ${formatLength(Math.round(b.width))} × ${formatLength(Math.round(b.height))}` +
+        (out.length ? `　はみ出し ${out.length} 台` : '')
+      info.classList.toggle('warn', out.length > 0)
+    } else {
+      info.textContent = 'なし'
+      info.classList.remove('warn')
+    }
+    clearBtn.disabled = !site
+  }
+  editor.onRender(paint)
+  paint()
+}

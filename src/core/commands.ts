@@ -2,6 +2,7 @@
 // applyCommand は純関数で、元のシーンを書き換えず、新しいシーンを返す。
 
 import { calibrate, checkBackground, type Background } from './background'
+import { checkSite, type Site } from './site'
 import { SCENE_VERSION, createEmptyScene, type Equipment, type Rotation, type Scene } from './scene'
 import type { Point } from './viewport'
 
@@ -13,6 +14,7 @@ export type Command =
   | { type: 'setBackground'; background: Background | null } // 背景の画像を置く・差し替える・外す（null）
   | { type: 'calibrateBackground'; a: Point; b: Point; distance: number } // 図面の上の 2 点が distance mm 離れているとして縮尺を合わせる。a は動かない
   | { type: 'moveBackground'; dx: number; dy: number } // 背景をずらす（mm）
+  | { type: 'setSite'; site: Site | null } // 敷地の外形を描く・差し替える・消す（null）
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
 
 export type CommandResult = { ok: true; scene: Scene } | { ok: false; error: string }
@@ -33,6 +35,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return calibrateBackground(scene, cmd.a, cmd.b, cmd.distance)
     case 'moveBackground':
       return moveBackground(scene, cmd.dx, cmd.dy)
+    case 'setSite':
+      return setSite(scene, cmd.site)
     case 'loadScene':
       return loadScene(cmd.scene)
   }
@@ -116,7 +120,14 @@ function moveBackground(scene: Scene, dx: number, dy: number): CommandResult {
   return { ok: true, scene: { ...scene, background: { ...bg, x: bg.x + dx, y: bg.y + dy } } }
 }
 
-// 空のシーンに背景と設備を 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
+function setSite(scene: Scene, site: Site | null): CommandResult {
+  if (site === null) return { ok: true, scene: { ...scene, site: null } }
+  const bad = checkSite(site)
+  if (bad) return fail(bad)
+  return { ok: true, scene: { ...scene, site: { points: site.points.map(({ x, y }) => ({ x, y })) } } }
+}
+
+// 空のシーンに背景・敷地・設備を 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
 // 知らない項目は落とす
 function loadScene(next: Scene): CommandResult {
   if (typeof next !== 'object' || next === null) return fail('シーンの形ではありません')
@@ -126,6 +137,10 @@ function loadScene(next: Scene): CommandResult {
   if (next.background !== null && next.background !== undefined) {
     if (typeof next.background !== 'object') return fail('背景（background）の形ではありません')
     r = setBackground(r.scene, next.background)
+    if (!r.ok) return r
+  }
+  if (next.site !== null && next.site !== undefined) {
+    r = setSite(r.scene, next.site)
     if (!r.ok) return r
   }
   for (const [i, eq] of next.equipment.entries()) {
