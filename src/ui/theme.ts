@@ -3,6 +3,7 @@
 import { THEME_LABEL, nextTheme, parseTheme, themeAttribute, type ThemeChoice } from '../core/theme'
 import type { Canvas } from './canvas'
 
+// index.html の先頭の script も同じ鍵を読む（最初の描画より前に当てるため）。変えるときは両方を直す
 const KEY = 'layout-studio:theme'
 
 const load = (): ThemeChoice => {
@@ -26,7 +27,7 @@ const apply = (t: ThemeChoice) => {
   else delete document.documentElement.dataset.theme
 }
 
-// 画面を組む前に呼ぶ（最初の描画から選んだ色で出すため）
+// 画面を組む前に呼ぶ。index.html の先頭で当てているので、ふつうは同じ値を当て直すだけ
 export function applySavedTheme(): void {
   apply(load())
 }
