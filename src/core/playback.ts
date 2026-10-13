@@ -238,8 +238,21 @@ function step(model: FlowModel, params: FlowParams, st: FlowState, dt: number): 
     st.parts = st.parts.filter((p) => p.s < p.length)
     for (const p of arrived) arrive(model, params, st, p.to, p.s - p.length)
   }
-  // AGV（番号の小さい順に、空いていれば呼び出しを受ける）
+  // AGV。先に、今空いている AGV が番号の小さい順に呼び出しを受ける（動いている AGV がこの刻みのうちに戻って
+  // 先に受けてしまわないように）。そのあと各 AGV を進め、刻みの途中で空いた AGV は残りの呼び出しを受ける
+  st.agvs.forEach((a, i) => {
+    if (a.phase === 'idle') claimRequest(model, st, i)
+  })
   st.agvs.forEach((_, i) => stepAgv(model, params, st, i, dt))
+}
+
+// 空いている AGV i に、行って帰れるストッカーの呼び出しを古い順に 1 つ渡す。渡せたら true
+function claimRequest(model: FlowModel, st: FlowState, i: number): boolean {
+  const k = st.requests.findIndex((id) => model.routes[id] && model.returns[id])
+  if (k < 0) return false
+  const [id] = st.requests.splice(k, 1)
+  st.agvs[i] = { phase: 'going', stocker: id!, s: 0 }
+  return true
 }
 
 function stepAgv(model: FlowModel, params: FlowParams, st: FlowState, i: number, dt: number): void {
@@ -247,10 +260,7 @@ function stepAgv(model: FlowModel, params: FlowParams, st: FlowState, i: number,
   while (left > 0) {
     const agv = st.agvs[i]!
     if (agv.phase === 'idle') {
-      const k = st.requests.findIndex((id) => model.routes[id] && model.returns[id])
-      if (k < 0) break
-      const [id] = st.requests.splice(k, 1)
-      st.agvs[i] = { phase: 'going', stocker: id!, s: 0 }
+      if (!claimRequest(model, st, i)) break
     } else if (agv.phase === 'going' || agv.phase === 'returning') {
       const len = pathLength((agv.phase === 'going' ? model.routes : model.returns)[agv.stocker]!)
       const need = (len - agv.s) / params.agvSpeed

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Aisle } from './aisle'
 import type { Link } from './flow'
+import { pathLength } from './route'
 import { applyCommand } from './commands'
 import { createHistory, execute, undo } from './history'
 import { DEFAULT_FLOW_PARAMS, agvUtilization, flowParams, flowView, formatClock, initialFlow, prepareFlow, stepFlow, type FlowParams } from './playback'
@@ -197,6 +198,19 @@ describe('stepFlow', () => {
     const [u1, u2] = agvUtilization(s)
     expect(u1).toBeCloseTo(3.5 / 6.5, 5)
     expect(u2).toBeCloseTo(0.5 / 6.5, 5)
+  })
+
+  it('戻る途中の AGV より、空いている AGV が先に呼び出しを受ける', () => {
+    const two: FlowParams = { ...P, agvCount: 2 }
+    const model = prepareFlow(cell())
+    const st = initialFlow(model, two)
+    // 1 台目はあと 100 mm で出入り口に戻る。2 台目は空いている。s2 が呼んでいる
+    st.agvs[0] = { phase: 'returning', stocker: 's1', s: pathLength(model.returns.s1!) - 100 }
+    st.requests = ['s2']
+    const s = stepFlow(model, two, st, 0.25)
+    expect(s.agvs[1]).toMatchObject({ phase: 'going', stocker: 's2' })
+    expect(s.agvs[0]!.phase).toBe('idle')
+    expect(s.carts).toBe(1)
   })
 
   it('AGV 1 台と 2 台で、満杯で待つ時間が変わる', () => {

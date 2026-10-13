@@ -413,7 +413,7 @@ function loadScene(next: Scene): CommandResult {
   const f =
     next.flow === undefined
       ? DEFAULT_FLOW_SETTINGS
-      : typeof next.flow === 'object' && next.flow !== null
+      : typeof next.flow === 'object' && next.flow !== null && !Array.isArray(next.flow)
         ? { ...DEFAULT_FLOW_SETTINGS, ...next.flow }
         : next.flow
   const badF = checkFlow(f, true)

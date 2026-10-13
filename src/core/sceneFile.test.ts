@@ -120,6 +120,15 @@ describe('版 7 からの変換', () => {
     expect(s.flow).toEqual({ ...flow, agvCount: 1 })
   })
 
+  it('flow の形が違うファイルは、版 7 でも 8 でも断る', () => {
+    for (const flow of [null, 'x', [], 3]) {
+      for (const version of [7, 8]) {
+        const r = parseScene(JSON.stringify({ version, background: null, site: null, equipment: [], aisles: [], links: [], flow }))
+        expect(r.ok).toBe(false)
+      }
+    }
+  })
+
   it('AGV の台数は保存して読み直しても同じ', () => {
     const s = { ...createEmptyScene(), flow: { ...createEmptyScene().flow, agvCount: 3 } }
     expect(parsed(serializeScene(s))).toEqual(s)

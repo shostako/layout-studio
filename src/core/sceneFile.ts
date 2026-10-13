@@ -30,7 +30,9 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
   // 版 7 で通路の一方通行（oneWay）を足した。版 6 の通路はどれも両方向なので、そのまま読む
   6: (d) => d,
   // 版 8 で AGV の台数（flow.agvCount）を足した。それまでは 1 台
-  7: (d) => ({ ...d, flow: { ...(d.flow as object), agvCount: 1 } }),
+  // flow が数値の束の形でなければ、そのままにして読み込みの確かめで断る
+  7: (d) =>
+    typeof d.flow === 'object' && d.flow !== null && !Array.isArray(d.flow) ? { ...d, flow: { ...d.flow, agvCount: 1 } } : d,
 }
 
 export function serializeScene(scene: Scene): string {
