@@ -182,7 +182,7 @@ body {
   color: var(--muted);
 }
 .dims input {
-  width: 4.2em;
+  width: 5.4em;
   font: inherit;
   font-size: 11px;
   font-variant-numeric: tabular-nums;

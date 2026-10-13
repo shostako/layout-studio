@@ -192,3 +192,26 @@ describe('余白への入り込み', () => {
     expect(findOverlaps(scene([a, b])).map((o) => o.kind === 'clearance' && `${o.owner}>${o.equipment}`)).toEqual(['a>b', 'b>a'])
   })
 })
+
+describe('成形機に載る取出機', () => {
+  const machine = { ...eq('m', 0, 0, 10000, 2800), clearance: { top: 1000, right: 1000, bottom: 1000, left: 1000 } }
+  const robot = { ...eq('r', 6000, -800, 800, 3600), kind: 'take-out-robot', clearance: { top: 500, right: 500, bottom: 500, left: 500 } }
+  const other = { ...eq('x', 6000, 3000, 800, 800), kind: 'take-out-robot' }
+
+  it('つないだ成形機と取出機は、本体の重なりも余白への入り込みも示さない（どちら向きのつなぎでも）', () => {
+    expect(findOverlaps({ ...scene([machine, robot]), links: [{ from: 'm', to: 'r' }] })).toEqual([])
+    expect(findOverlaps({ ...scene([machine, robot]), links: [{ from: 'r', to: 'm' }] })).toEqual([])
+  })
+
+  it('つないでいなければ示す。ほかの設備との重なりはつないでいても示す', () => {
+    expect(findOverlaps(scene([machine, robot])).map((o) => o.kind)).toEqual(['equipment', 'clearance', 'clearance'])
+    const o = findOverlaps({ ...scene([machine, robot, other]), links: [{ from: 'm', to: 'r' }] })
+    // other は成形機の下の余白に入り、取出機の下の余白にも入る
+    expect(o.map((x) => x.kind === 'clearance' && `${x.owner}>${x.equipment}`)).toEqual(['m>x', 'r>x'])
+  })
+
+  it('成形機どうし・取出機どうしは、つないでいても示す', () => {
+    const m2 = eq('m2', 5000, 0, 10000, 2800)
+    expect(findOverlaps({ ...scene([eq('m', 0, 0, 10000, 2800), m2]), links: [{ from: 'm', to: 'm2' }] })).toHaveLength(1)
+  })
+})

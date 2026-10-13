@@ -16,7 +16,7 @@ describe('TEMPLATES', () => {
 describe('equipmentFromTemplate', () => {
   it('ひな形の寸法と色で作り、寸法と回転は変えられる。add コマンドで置ける', () => {
     const a = equipmentFromTemplate(molding, { id: 'eq-1', name: '成形機 1', center: { x: 5000, y: 3000 } })
-    expect(a).toMatchObject({ kind: 'molding-machine', x: 5000, y: 3000, width: 6000, depth: 2000, rotation: 0 })
+    expect(a).toMatchObject({ kind: 'molding-machine', x: 5000, y: 3000, width: 10000, depth: 2800, rotation: 0 })
     const b = equipmentFromTemplate(molding, {
       id: 'eq-2',
       name: '成形機 2',

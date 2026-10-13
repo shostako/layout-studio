@@ -30,9 +30,9 @@ describe('summarizeScene', () => {
     expect(sum.unit).toBe('mm')
     expect(sum.site).toMatchObject({ bounds: { left: 0, top: 0, right: 30000, bottom: 20000 }, areaM2: 600 })
     expect(sum.equipment).toHaveLength(2)
-    // 90° 回した成形機（6000 × 2000）は図面の上で 2000 × 6000
-    expect(sum.equipment[0]).toMatchObject({ id: 'eq-1', kind: 'molding-machine', x: 5000, y: 5000, width: 6000, depth: 2000, rotation: 90 })
-    expect(sum.equipment[0]!.bounds).toEqual({ left: 4000, top: 2000, right: 6000, bottom: 8000 })
+    // 90° 回した成形機（10000 × 2800）は図面の上で 2800 × 10000
+    expect(sum.equipment[0]).toMatchObject({ id: 'eq-1', kind: 'molding-machine', x: 5000, y: 5000, width: 10000, depth: 2800, rotation: 90 })
+    expect(sum.equipment[0]!.bounds).toEqual({ left: 3600, top: 0, right: 6400, bottom: 10000 })
     expect(sum.aisles[0]).toMatchObject({ id: 'aisle-1', width: 1500, closed: false, lengthMm: 30000 })
     expect(sum.links).toEqual([{ from: 'eq-1', to: 'eq-2' }])
     expect(sum.flow.cycleTime).toBe(30)

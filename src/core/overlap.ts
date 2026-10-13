@@ -145,12 +145,21 @@ export function clearanceZone(eq: Equipment): Rect[] {
   return out.filter((q) => q.width > EPS && q.height > EPS)
 }
 
+// 取出機は成形機の上に載る。つないだ成形機と取出機の組（どちら向きでも）は、本体の重なりも余白への入り込みも示さない
+const MOUNTED: readonly [string, string][] = [['molding-machine', 'take-out-robot']]
+
+export function isMounted(scene: Scene, a: Equipment, b: Equipment): boolean {
+  const pair = MOUNTED.some(([p, q]) => (a.kind === p && b.kind === q) || (a.kind === q && b.kind === p))
+  return pair && scene.links.some((l) => (l.from === a.id && l.to === b.id) || (l.from === b.id && l.to === a.id))
+}
+
 // シーンの中の重なりをすべて挙げる。設備どうしは配列の順に (a, b)、続いて設備と通路、続いて余白（余白の持ち主の順）
 export function findOverlaps(scene: Scene): Overlap[] {
   const out: Overlap[] = []
-  const fps = scene.equipment.map((eq) => ({ id: eq.id, r: footprint(eq) }))
+  const fps = scene.equipment.map((eq) => ({ id: eq.id, eq, r: footprint(eq) }))
   for (let i = 0; i < fps.length; i++)
     for (let j = i + 1; j < fps.length; j++) {
+      if (isMounted(scene, fps[i]!.eq, fps[j]!.eq)) continue
       const region = rectOverlap(fps[i]!.r, fps[j]!.r)
       if (region) out.push({ kind: 'equipment', a: fps[i]!.id, b: fps[j]!.id, region })
     }
@@ -165,8 +174,8 @@ export function findOverlaps(scene: Scene): Overlap[] {
   for (const owner of scene.equipment) {
     const zone = clearanceZone(owner)
     if (zone.length === 0) continue
-    for (const { id, r } of fps) {
-      if (id === owner.id) continue
+    for (const { id, eq, r } of fps) {
+      if (id === owner.id || isMounted(scene, owner, eq)) continue
       const regions = zone.map((z) => rectOverlap(z, r)).filter((q): q is Rect => q !== null)
       if (regions.length > 0) out.push({ kind: 'clearance', owner: owner.id, equipment: id, regions })
     }
