@@ -296,3 +296,17 @@ body {
 .calibrate-form[hidden] {
   display: none;
 }
+.toolbar .file-group {
+  margin-left: 0;
+  margin-right: 6px;
+}
+.save-state {
+  color: var(--muted);
+  max-width: 32em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.save-state.warn {
+  color: #b9770e;
+}

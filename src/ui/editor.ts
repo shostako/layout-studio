@@ -33,6 +33,8 @@ export type Editor = {
   render(): void
   // シーンや表示が変わって描き直すたびに呼ぶ
   onRender(listener: () => void): void
+  // 履歴を捨てて、このシーンから始め直す（起動時に自動保存から戻すときだけ使う。ふだんの操作は run を通す）
+  reset(scene: Scene): void
 }
 
 type Mode =
@@ -455,5 +457,12 @@ export function mountEditor(canvas: Canvas): Editor {
     },
     render,
     onRender: (f) => listeners.push(f),
+    reset: (next) => {
+      setMode({ type: 'idle' })
+      history = createHistory(next)
+      selected = []
+      message = ''
+      render()
+    },
   }
 }
