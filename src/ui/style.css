@@ -943,3 +943,7 @@ body {
     max-height: calc(100% - 72px);
   }
 }
+/* 例の選び欄は、長い名前で道具バーを押し広げないよう幅を抑える */
+.toolbar select.examples {
+  max-width: 8em;
+}
