@@ -29,6 +29,8 @@ const HIT_SLACK_PX = 4
 const HANDLE_PX = 10
 const MID_PX = 7
 const GRAB_PX = 7
+// 指は先が太いので、当たりの幅をこれだけ広げる
+const TOUCH_REACH = 2.5
 // スナップしないときの矢印キー 1 回の移動量
 const NUDGE_NO_SNAP = 10
 
@@ -238,8 +240,9 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
   delBtn.addEventListener('click', removeSelection)
 
   // ---- 選ぶ: 設備の無い所のクリックで、通路に当たれば選ぶ ----
-  editor.onEmptyClick((at) => {
-    const hit = aisleHitTest(editor.scene(), at, HIT_SLACK_PX / canvas.getViewport().scale)
+  editor.onEmptyClick((at, e) => {
+    const reach = e.pointerType === 'touch' ? TOUCH_REACH : 1
+    const hit = aisleHitTest(editor.scene(), at, (HIT_SLACK_PX * reach) / canvas.getViewport().scale)
     // 設備・通路・つなぎは同時に選ばない
     if (hit) editor.claimSelection('aisle')
     selected = hit ? [hit] : []
@@ -283,7 +286,8 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     }
   }
   editor.onGrab((at, e) => {
-    const s = scale()
+    const touch = e.pointerType === 'touch'
+    const s = scale() / (touch ? TOUCH_REACH : 1)
     const a = selectedAisle()
     if (a && !e.shiftKey) {
       const i = aisleVertexAt(a, at, GRAB_PX / s)
@@ -298,6 +302,17 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     const hit = aisleHitTest(scene, at, HIT_SLACK_PX / s)
     const target = scene.aisles.find((x) => x.id === hit)
     if (!target) return null
+    // 指では、選んでいない通路は動かさない（触って離したら選ぶ、動かしたら画面の移動）
+    if (touch && !selected.includes(target.id)) {
+      return {
+        move: () => null,
+        panOnTouch: true,
+        click: () => {
+          editor.claimSelection('aisle')
+          select([target.id])
+        },
+      }
+    }
     editor.claimSelection('aisle')
     if (!selected.includes(target.id)) select([target.id])
     else vertex = null

@@ -40,6 +40,20 @@ export function panBy(view: Viewport, dx: number, dy: number): Viewport {
   return { ...view, originX: view.originX - dx / view.scale, originY: view.originY - dy / view.scale }
 }
 
+// 2 本指の拡大縮小と移動。from の 2 点が to の 2 点へ動いたとき、指の間の中点にあった図面の点を新しい中点へ運び、
+// 指の間の距離の比で拡大縮小する。上下限で止まったら、その倍率で中点だけを合わせる
+export function pinchView(view: Viewport, from: [Point, Point], to: [Point, Point]): Viewport {
+  const dist = (p: [Point, Point]) => Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y)
+  const mid = (p: [Point, Point]): Point => ({ x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 })
+  const d0 = dist(from)
+  // 指がほぼ重なっていると比が暴れるので、そのときは移動だけにする
+  const factor = d0 < 1 ? 1 : dist(to) / d0
+  const anchor = screenToWorld(view, mid(from))
+  const scale = clampScale(view.scale * factor)
+  const m = mid(to)
+  return { originX: anchor.x - m.x / scale, originY: anchor.y - m.y / scale, scale }
+}
+
 // 図面の範囲 rect が画面 screen の中央に収まるようにする。margin は画面の端に残す px
 export function fitRect(rect: Rect, screen: Size, margin = 24): Viewport {
   const w = Math.max(1, screen.width - 2 * margin)
