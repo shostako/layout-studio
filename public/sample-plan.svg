@@ -60,9 +60,6 @@
 <rect x="1885" y="1035" width="30" height="30"/>
 <rect x="1885" y="1335" width="30" height="30"/>
 </g>
-<g fill="none" stroke="#333" stroke-width="5"><path d="M550 150 V450 H100 M550 450 H100"/></g>
-<rect x="400" y="447" width="60" height="6" fill="#fff"/>
-<text x="325" y="310" font-size="22" text-anchor="middle" fill="#333">事務所</text>
 <g stroke="#c0392b" stroke-width="1.5"><line x1="100" y1="70" x2="1900" y2="70"/><line x1="100" y1="60" x2="100" y2="80"/><line x1="1900" y1="60" x2="1900" y2="80"/></g>
 <text x="1000.0" y="62" font-size="22" text-anchor="middle" fill="#c0392b">36000</text>
 <g stroke="#c0392b" stroke-width="1.5"><line x1="100" y1="115" x2="400" y2="115"/><line x1="100" y1="105" x2="100" y2="125"/><line x1="400" y1="105" x2="400" y2="125"/></g>

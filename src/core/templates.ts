@@ -14,10 +14,12 @@ export type EquipmentTemplate = {
 
 const around = (mm: number): Clearance => ({ top: mm, right: mm, bottom: mm, left: mm })
 
-// 工程の順に並べる。寸法と余白は架空の目安（実機の値ではない）
+// 工程の順に並べる。寸法と余白は架空の目安（実機の値ではない）。
+// 成形機は横長（x が型締めの向き）。取出機は成形機の上に載る横走行形で、走行の梁が成形機を横切る（y が梁の向き）。
+// 成形機の中心から梁は反操作側へ約 800、操作側へ約 2800 張り出し、操作側に成形品を落とす（DECISIONS.md）
 export const TEMPLATES: readonly EquipmentTemplate[] = [
-  { kind: 'molding-machine', name: '成形機', width: 6000, depth: 2000, color: '#5b8bd9', clearance: around(1000) },
-  { kind: 'take-out-robot', name: '取出機', width: 1500, depth: 1200, color: '#4fae8a', clearance: around(500) },
+  { kind: 'molding-machine', name: '成形機', width: 10000, depth: 2800, color: '#5b8bd9', clearance: around(1000) },
+  { kind: 'take-out-robot', name: '取出機', width: 800, depth: 3600, color: '#4fae8a', clearance: around(500) },
   { kind: 'degating-machine', name: '型抜き機', width: 1500, depth: 1500, color: '#d9a44a', clearance: around(500) },
   { kind: 'trimming-machine', name: 'トリミング機', width: 1800, depth: 1200, color: '#c97a5b', clearance: around(500) },
   { kind: 'weighing-scale', name: '重量計', width: 800, depth: 600, color: '#9a7fc9', clearance: around(500) },

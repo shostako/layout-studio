@@ -57,13 +57,13 @@ describe('planAiCommands', () => {
     ])
     if (!r.ok) throw new Error(r.error)
     expect(r.scene.equipment.slice(2).map((e) => [e.id, e.name, e.width, e.rotation])).toEqual([
-      ['eq-3', '成形機 3', 6000, 0],
-      ['eq-4', '取出機 1', 1500, 90],
+      ['eq-3', '成形機 3', 10000, 0],
+      ['eq-4', '取出機 1', 800, 90],
     ])
     expect(r.scene.links).toEqual([{ from: 'eq-3', to: 'eq-4' }])
     expect(r.steps.map((x) => x.text)).toEqual([
-      '成形機 3 を置く（中心 x 30,000 mm・y 5,000 mm、6,000 mm × 2,000 mm、回転 0°）',
-      '取出機 1 を置く（中心 x 30,000 mm・y 8,000 mm、1,500 mm × 1,200 mm、回転 90°）',
+      '成形機 3 を置く（中心 x 30,000 mm・y 5,000 mm、10,000 mm × 2,800 mm、回転 0°）',
+      '取出機 1 を置く（中心 x 30,000 mm・y 8,000 mm、800 mm × 3,600 mm、回転 90°）',
       'つなぐ: 成形機 3 → 取出機 1',
     ])
     // 元のシーンは変わらない
