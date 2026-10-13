@@ -38,6 +38,13 @@ export type Editor = {
   reset(scene: Scene): void
   // 今のスナップの間隔（mm、0 はスナップしない）。敷地の頂点を拾うときにも使う
   snapStep(): number
+  // 選択中の設備の id
+  selection(): string[]
+  // 設備の選択を変える（通路を選んだときに設備の選択を外すなど）
+  select(ids: string[]): void
+  // ふだんの操作で、設備の無い所を左クリックしたときに呼ぶ（通路を選ぶのに使う）。
+  // 設備の選択は呼ぶ前に外している（Shift なしのとき）
+  onEmptyClick(listener: (at: Point, e: PointerEvent) => void): void
 }
 
 type Mode =
@@ -74,6 +81,7 @@ export function mountEditor(canvas: Canvas): Editor {
   toolLayer.setAttribute('class', 'tool-layer')
   canvas.world.append(layer, toolLayer)
   const listeners: (() => void)[] = []
+  const emptyClickListeners: ((at: Point, e: PointerEvent) => void)[] = []
 
   // 今の操作をやめて別の操作に移る。道具を使っていたら知らせる
   const setMode = (next: Mode) => {
@@ -408,6 +416,7 @@ export function mountEditor(canvas: Canvas): Editor {
     const hit = hitTest(scene(), at)
     if (!hit) {
       if (!e.shiftKey) selected = []
+      for (const f of emptyClickListeners) f(at, e)
       render()
       return
     }
@@ -542,5 +551,11 @@ export function mountEditor(canvas: Canvas): Editor {
       render()
     },
     snapStep: () => snap,
+    selection: () => liveSelection(),
+    select: (ids) => {
+      selected = ids
+      render()
+    },
+    onEmptyClick: (f) => emptyClickListeners.push(f),
   }
 }

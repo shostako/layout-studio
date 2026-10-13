@@ -1,6 +1,7 @@
 // シーンを変える操作（コマンド）。画面・保存・元に戻す・AI の操作は、すべてここを通る。
 // applyCommand は純関数で、元のシーンを書き換えず、新しいシーンを返す。
 
+import { checkAisle, type Aisle } from './aisle'
 import { calibrate, checkBackground, type Background } from './background'
 import { checkSite, type Site } from './site'
 import { SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Equipment, type Rotation, type Scene } from './scene'
@@ -17,10 +18,16 @@ export type Command =
   | { type: 'calibrateBackground'; a: Point; b: Point; distance: number } // 図面の上の 2 点が distance mm 離れているとして縮尺を合わせる。a は動かない
   | { type: 'moveBackground'; dx: number; dy: number } // 背景をずらす（mm）
   | { type: 'setSite'; site: Site | null } // 敷地の外形を描く・差し替える・消す（null）
+  | { type: 'addAisle'; aisle: Aisle } // AGV の通路を描く。id は呼ぶ側が決める（nextAisleId）
+  | { type: 'updateAisle'; ids: string[]; changes: AisleChanges } // 通路の名前・幅を変える。中心線は動かさない
+  | { type: 'removeAisle'; ids: string[] } // 通路を消す
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
 
 // update で変えられる項目。書いたものだけ変える
 export type EquipmentChanges = { name?: string; width?: number; depth?: number; color?: string }
+
+// updateAisle で変えられる項目。書いたものだけ変える
+export type AisleChanges = { name?: string; width?: number }
 
 export type CommandResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
@@ -46,6 +53,12 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return moveBackground(scene, cmd.dx, cmd.dy)
     case 'setSite':
       return setSite(scene, cmd.site)
+    case 'addAisle':
+      return addAisle(scene, cmd.aisle)
+    case 'updateAisle':
+      return updateAisle(scene, cmd.ids, cmd.changes)
+    case 'removeAisle':
+      return removeAisle(scene, cmd.ids)
     case 'loadScene':
       return loadScene(cmd.scene)
   }
@@ -180,7 +193,45 @@ function setSite(scene: Scene, site: Site | null): CommandResult {
   return { ok: true, scene: { ...scene, site: { points: site.points.map(({ x, y }) => ({ x, y })) } } }
 }
 
-// 空のシーンに背景・敷地・設備を 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
+function addAisle(scene: Scene, a: Aisle): CommandResult {
+  const bad = checkAisle(a)
+  if (bad) return fail(bad)
+  if (scene.aisles.some((x) => x.id === a.id)) return fail(`通路の id が重複しています: ${a.id}`)
+  const aisle: Aisle = { id: a.id, name: a.name.trim(), points: a.points.map(({ x, y }) => ({ x, y })), width: a.width, closed: a.closed }
+  return { ok: true, scene: { ...scene, aisles: [...scene.aisles, aisle] } }
+}
+
+function checkAisleIds(scene: Scene, ids: string[]): string | null {
+  if (!Array.isArray(ids) || ids.length === 0) return '対象の通路がありません'
+  if (new Set(ids).size !== ids.length) return '対象の通路が重複しています'
+  const missing = ids.filter((id) => !scene.aisles.some((a) => a.id === id))
+  if (missing.length > 0) return `通路が見つかりません: ${missing.join(', ')}`
+  return null
+}
+
+function updateAisle(scene: Scene, ids: string[], changes: AisleChanges): CommandResult {
+  const bad = checkAisleIds(scene, ids)
+  if (bad) return fail(bad)
+  if (typeof changes !== 'object' || changes === null) return fail('変える項目がありません')
+  const { name, width } = changes
+  if (name === undefined && width === undefined) return fail('変える項目がありません')
+  if (name !== undefined && (typeof name !== 'string' || !name.trim())) return fail('名前を入れてください')
+  if (width !== undefined && !(typeof width === 'number' && width > 0 && Number.isFinite(width))) return fail('通路の幅は正の数にしてください')
+  const set: AisleChanges = {}
+  if (name !== undefined) set.name = name.trim()
+  if (width !== undefined) set.width = width
+  const targets = new Set(ids)
+  return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (targets.has(a.id) ? { ...a, ...set } : a)) } }
+}
+
+function removeAisle(scene: Scene, ids: string[]): CommandResult {
+  const bad = checkAisleIds(scene, ids)
+  if (bad) return fail(bad)
+  const targets = new Set(ids)
+  return { ok: true, scene: { ...scene, aisles: scene.aisles.filter((a) => !targets.has(a.id)) } }
+}
+
+// 空のシーンに背景・敷地・設備・通路を 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
 // 知らない項目は落とす
 function loadScene(next: Scene): CommandResult {
   if (typeof next !== 'object' || next === null) return fail('シーンの形ではありません')
@@ -199,6 +250,12 @@ function loadScene(next: Scene): CommandResult {
   for (const [i, eq] of next.equipment.entries()) {
     if (typeof eq !== 'object' || eq === null) return fail(`${i + 1} 番目の設備が設備の形ではありません`)
     r = add(r.scene, eq)
+    if (!r.ok) return r
+  }
+  if (!Array.isArray(next.aisles)) return fail('通路の一覧（aisles）がありません')
+  for (const [i, a] of next.aisles.entries()) {
+    if (typeof a !== 'object' || a === null) return fail(`${i + 1} 番目の通路が通路の形ではありません`)
+    r = addAisle(r.scene, a)
     if (!r.ok) return r
   }
   return r

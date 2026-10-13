@@ -1,4 +1,5 @@
 import './ui/style.css'
+import { mountAisles } from './ui/aisle'
 import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
 import { mountEditor } from './ui/editor'
@@ -11,5 +12,6 @@ if (app) {
   const editor = mountEditor(canvas)
   mountBackground(canvas, editor)
   mountSite(canvas, editor)
+  mountAisles(canvas, editor)
   mountStorage(canvas, editor)
 }

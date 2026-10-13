@@ -1,5 +1,5 @@
 // シーンの JSON ファイル: 書き出しと、読み込み（古い版の変換と中身の確かめ）。DOM に触らない。
-// ファイルの中身はシーンそのもの（version・background・site・equipment）。形を変えるときは SCENE_VERSION を上げ、
+// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles）。形を変えるときは SCENE_VERSION を上げ、
 // MIGRATIONS に 1 つ前の版から変換する関数を足す。
 
 import { applyCommand } from './commands'
@@ -11,6 +11,8 @@ export type ParseResult = { ok: true; scene: Scene } | { ok: false; error: strin
 export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {
   // 版 2 で敷地の外形を足した。版 1 には無いので null
   1: (d) => ({ ...d, site: null }),
+  // 版 3 で AGV の通路を足した。版 2 には無いので空
+  2: (d) => ({ ...d, aisles: [] }),
 }
 
 export function serializeScene(scene: Scene): string {
