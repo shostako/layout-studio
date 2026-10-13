@@ -31,9 +31,17 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
 }
 
 export type Canvas = {
+  svg: SVGSVGElement
   // 図面の座標（mm）で描くものを入れる層。設備はここに足す
   world: SVGGElement
+  toolbar: HTMLElement
+  // キャンバスの左に置く欄（ひな形など）
+  side: HTMLElement
   getViewport(): Viewport
+  // 画面の座標（clientX, clientY）を図面の座標（mm）にする
+  toWorld(clientX: number, clientY: number): Point
+  // Space を押している間の左ボタンは画面の移動に使う
+  isPanKeyDown(): boolean
 }
 
 export function mountCanvas(root: HTMLElement): Canvas {
@@ -60,7 +68,10 @@ export function mountCanvas(root: HTMLElement): Canvas {
   const status = document.createElement('div')
   status.className = 'status'
 
-  root.append(toolbar, svgEl, status)
+  const side = document.createElement('div')
+  side.className = 'side'
+
+  root.append(toolbar, side, svgEl, status)
 
   const size = (): Size => {
     const r = svgEl.getBoundingClientRect()
@@ -119,7 +130,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
   mkButton('全体', '最初の範囲を表示（0 キー）', home)
   const help = document.createElement('span')
   help.className = 'help'
-  help.textContent = 'ホイール: 拡大縮小　中ボタン・右ボタン・Space＋左ボタンでドラッグ: 移動'
+  help.textContent = 'ホイール: 拡大縮小　中・右ボタンか Space＋左ボタンのドラッグ: 画面の移動'
   toolbar.append(help)
 
   const local = (e: MouseEvent): Point => {
@@ -215,5 +226,16 @@ export function mountCanvas(root: HTMLElement): Canvas {
   }).observe(svgEl)
 
   draw()
-  return { world, getViewport: () => view }
+  return {
+    svg: svgEl,
+    world,
+    toolbar,
+    side,
+    getViewport: () => view,
+    toWorld: (clientX, clientY) => {
+      const r = svgEl.getBoundingClientRect()
+      return screenToWorld(view, { x: clientX - r.left, y: clientY - r.top })
+    },
+    isPanKeyDown: () => spaceDown,
+  }
 }
