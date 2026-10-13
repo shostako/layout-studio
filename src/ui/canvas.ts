@@ -131,8 +131,13 @@ export function mountCanvas(root: HTMLElement): Canvas {
     'wheel',
     (e) => {
       e.preventDefault()
-      // deltaMode 1 は行単位（Firefox）。1 行 ≒ 33 px として換算する
-      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+      // deltaMode 1 は行単位（Firefox）で 1 行 ≒ 33 px、2 はページ単位でキャンバスの高さとして換算する
+      const dy =
+        e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? e.deltaY * 33
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? e.deltaY * size().height
+            : e.deltaY
       const at = local(e)
       setView(zoomAt(view, at, WHEEL_ZOOM_PER_100 ** (-dy / 100)))
       cursor = screenToWorld(view, at)
@@ -175,22 +180,33 @@ export function mountCanvas(root: HTMLElement): Canvas {
   })
   svgEl.addEventListener('contextmenu', (e) => e.preventDefault())
 
+  // ボタンや入力欄がキーを使うときは、キャンバスの操作にしない
+  const isInteractive = (t: EventTarget | null) =>
+    t instanceof HTMLElement && (t.isContentEditable || t.closest('button, input, select, textarea, a[href]') !== null)
+  const releaseSpace = () => {
+    spaceDown = false
+    svgEl.classList.remove('pan-ready')
+  }
+
   window.addEventListener('keydown', (e) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+    if (isInteractive(e.target)) return
     if (e.code === 'Space') {
       spaceDown = true
       svgEl.classList.add('pan-ready')
       e.preventDefault()
-    } else if (e.key === '+' || e.key === ';') zoomIn()
+      return
+    }
+    // Ctrl・Cmd・Alt つきはブラウザの拡大縮小などに任せる
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key === '+' || e.key === ';') zoomIn()
     else if (e.key === '-') zoomOut()
     else if (e.key === '0') home()
   })
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'Space') {
-      spaceDown = false
-      svgEl.classList.remove('pan-ready')
-    }
+    if (e.code === 'Space') releaseSpace()
   })
+  // Space を押したまま別の窓へ移ると keyup が来ないので、離れたときに戻す
+  window.addEventListener('blur', releaseSpace)
 
   // 窓の大きさが変わっても、左上の図面座標と倍率はそのまま
   new ResizeObserver(() => {
