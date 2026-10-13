@@ -3,7 +3,7 @@ import { hitTest, snapCenter, snapMove, snapValue } from './placement'
 import { createEmptyScene, footprint, type Equipment, type Scene } from './scene'
 
 function eq(id: string, over: Partial<Equipment> = {}): Equipment {
-  return { id, kind: 'k', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 0, color: '#888', ...over }
+  return { id, kind: 'k', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 0, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 }, ...over }
 }
 
 describe('snapValue', () => {

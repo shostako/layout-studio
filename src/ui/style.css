@@ -470,3 +470,48 @@ body {
 .overlap-list li.more:hover {
   background: none;
 }
+.clearance-zone {
+  fill-opacity: 0.08;
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.clearance-zone.selected {
+  fill-opacity: 0.16;
+  stroke-opacity: 1;
+  stroke-width: 1.5;
+}
+.equipment.in-clearance rect {
+  stroke: #ef6c00;
+  stroke-width: 3;
+}
+/* 本体の重なり（赤）とはみ出し（赤い破線）を優先する */
+.equipment.in-clearance.overlap rect,
+.equipment.in-clearance.outside rect {
+  stroke: #d32f2f;
+}
+.equipment.in-clearance.selected rect {
+  stroke-width: 4;
+}
+.clearance-hit-layer {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.clearance-hit-layer rect {
+  fill: #ef6c00;
+}
+.overlap-list li.clearance:hover {
+  background: rgba(239, 108, 0, 0.12);
+}
+.clearance-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px 6px;
+}
+.clearance-inputs span {
+  display: grid;
+  grid-template-columns: 1.2em 1fr;
+  align-items: center;
+}

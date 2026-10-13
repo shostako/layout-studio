@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Aisle } from './aisle'
-import { aislePieces, clipToRect, convexOverlapsRect, findOverlaps, overlappingEquipment, rectOverlap } from './overlap'
+import { aislePieces, clearanceEquipment, clearanceZone, clipToRect, convexOverlapsRect, findOverlaps, overlappingEquipment, rectOverlap } from './overlap'
 import { createEmptyScene, type Equipment, type Rotation, type Scene } from './scene'
 
 // 左上 (x, y)、幅 w、奥行 d の設備（回転 0）
@@ -8,7 +8,7 @@ function eq(id: string, x: number, y: number, w: number, d: number, rotation: Ro
   const turned = rotation === 90 || rotation === 270
   const fw = turned ? d : w
   const fh = turned ? w : d
-  return { id, kind: 'molding-machine', name: id, x: x + fw / 2, y: y + fh / 2, width: w, depth: d, rotation, color: '#888888' }
+  return { id, kind: 'molding-machine', name: id, x: x + fw / 2, y: y + fh / 2, width: w, depth: d, rotation, color: '#888888', clearance: { top: 0, right: 0, bottom: 0, left: 0 } }
 }
 
 function aisle(id: string, xy: [number, number][], over: Partial<Aisle> = {}): Aisle {
@@ -145,5 +145,50 @@ describe('切り取りと分離軸', () => {
     const away = band.map((p) => ({ x: p.x + 10, y: p.y + 10 }))
     // x + y = 210 の線が (100, 100) を通らない側
     expect(convexOverlapsRect(away, r)).toBe(false)
+  })
+})
+
+describe('余白への入り込み', () => {
+  // 左上 (0, 0)、4000 × 2000 の設備に、上 500・右 1000・下 0・左 0 の余白
+  const owner = (rotation: Rotation = 0): Equipment => ({ ...eq('o', 0, 0, 4000, 2000, rotation), clearance: { top: 500, right: 1000, bottom: 0, left: 0 } })
+
+  it('余白を辺ごとの長方形に分け、幅 0 の辺は出さない', () => {
+    expect(clearanceZone(owner())).toEqual([
+      { x: 0, y: -500, width: 5000, height: 500 },
+      { x: 4000, y: 0, width: 1000, height: 2000 },
+    ])
+  })
+
+  it('他の設備の本体が余白に入ると、入った部分を返す。本体どうしの重なりにはしない', () => {
+    const o = findOverlaps(scene([owner(), eq('b', 4500, 1000, 1000, 1000)]))
+    expect(o).toEqual([{ kind: 'clearance', owner: 'o', equipment: 'b', regions: [{ x: 4500, y: 1000, width: 500, height: 1000 }] }])
+    expect(overlappingEquipment(o).size).toBe(0)
+    expect([...clearanceEquipment(o)].sort()).toEqual(['b', 'o'])
+  })
+
+  it('余白の外側の縁に接するだけなら入っていない。余白の無い辺に接するのも同じ', () => {
+    expect(findOverlaps(scene([owner(), eq('b', 5000, 0, 1000, 1000)]))).toEqual([])
+    expect(findOverlaps(scene([owner(), eq('b', 0, 2000, 1000, 1000)]))).toEqual([])
+    expect(findOverlaps(scene([owner(), eq('b', -1000, 0, 1000, 1000)]))).toEqual([])
+  })
+
+  it('余白は設備と一緒に回る', () => {
+    // 90 度: 外接 (0, 0)〜(2000, 4000)。上の余白 500 が右へ、右の余白 1000 が下へ
+    const o = owner(90)
+    expect(findOverlaps(scene([o, eq('b', 2100, 0, 500, 500)]))).toHaveLength(1)
+    expect(findOverlaps(scene([o, eq('b', 500, 4200, 500, 500)]))).toHaveLength(1)
+    expect(findOverlaps(scene([o, eq('b', 500, -600, 500, 500)]))).toEqual([])
+  })
+
+  it('余白どうしの重なりと、余白と通路の重なりは示さない', () => {
+    const other = { ...eq('p', 5500, 0, 1000, 1000), clearance: { top: 0, right: 0, bottom: 0, left: 1000 } }
+    expect(findOverlaps(scene([owner(), other]))).toEqual([])
+    expect(findOverlaps(scene([owner()], [aisle('aisle-1', [[0, -300], [6000, -300]], { width: 200 })]))).toEqual([])
+  })
+
+  it('両方が互いの余白に入っていれば 2 件', () => {
+    const a = { ...eq('a', 0, 0, 1000, 1000), clearance: { top: 0, right: 600, bottom: 0, left: 0 } }
+    const b = { ...eq('b', 1500, 0, 1000, 1000), clearance: { top: 0, right: 0, bottom: 0, left: 600 } }
+    expect(findOverlaps(scene([a, b])).map((o) => o.kind === 'clearance' && `${o.owner}>${o.equipment}`)).toEqual(['a>b', 'b>a'])
   })
 })

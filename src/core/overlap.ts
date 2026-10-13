@@ -1,10 +1,10 @@
-// 重なりの検出: 設備どうし、設備と AGV の通路。DOM に触らない。
+// 重なりの検出: 設備どうし、設備と AGV の通路、設備の本体と他の設備の保守用の余白。DOM に触らない。
 // 設備は回転を考えた外接の長方形（90 度刻みなので軸にそろう）で見る。辺や角が接するだけなら重なりとしない。
 // 通路は画面の描き方（SVG の太線、角は miter、端は butt）と同じ形を、凸多角形の集まりにして扱う:
 // 中心線の線分ごとの長方形と、角の外側を埋める多角形（miter の尖り。尖りすぎる角は SVG と同じく bevel に落とす）。
 
 import { aisleSegments, type Aisle } from './aisle'
-import { footprint, type Scene } from './scene'
+import { clearanceRect, footprint, worldClearance, type Equipment, type Scene } from './scene'
 import type { Point, Rect } from './viewport'
 
 // 接しているだけとみなす誤差（mm）
@@ -17,6 +17,8 @@ export type Overlap =
   | { kind: 'equipment'; a: string; b: string; region: Rect }
   // 設備と通路。regions は重なっている部分（凸多角形の集まり。互いに重なることがある）
   | { kind: 'aisle'; equipment: string; aisle: string; regions: Point[][] }
+  // 設備 equipment の本体が、設備 owner の余白に入っている。regions は入っている部分（余白を辺ごとに分けた長方形との重なり）
+  | { kind: 'clearance'; owner: string; equipment: string; regions: Rect[] }
 
 // 2 つの長方形の内部が重なっているか（辺や角が接するだけなら重ならない）。重なっていればその長方形
 export function rectOverlap(a: Rect, b: Rect): Rect | null {
@@ -129,7 +131,21 @@ export function clipToRect(poly: readonly Point[], r: Rect): Point[] {
   return out.length >= 3 ? out : []
 }
 
-// シーンの中の重なりをすべて挙げる。設備どうしは配列の順に (a, b)、続いて設備と通路
+// 設備の余白（本体を除いた周り）を、重ならない長方形に分ける: 上と下は余白の幅いっぱい、左と右は本体の高さだけ。幅 0 の辺は出さない
+export function clearanceZone(eq: Equipment): Rect[] {
+  const f = footprint(eq)
+  const r = clearanceRect(eq)
+  const c = worldClearance(eq)
+  const out: Rect[] = [
+    { x: r.x, y: r.y, width: r.width, height: c.top },
+    { x: r.x, y: f.y + f.height, width: r.width, height: c.bottom },
+    { x: r.x, y: f.y, width: c.left, height: f.height },
+    { x: f.x + f.width, y: f.y, width: c.right, height: f.height },
+  ]
+  return out.filter((q) => q.width > EPS && q.height > EPS)
+}
+
+// シーンの中の重なりをすべて挙げる。設備どうしは配列の順に (a, b)、続いて設備と通路、続いて余白（余白の持ち主の順）
 export function findOverlaps(scene: Scene): Overlap[] {
   const out: Overlap[] = []
   const fps = scene.equipment.map((eq) => ({ id: eq.id, r: footprint(eq) }))
@@ -145,15 +161,32 @@ export function findOverlaps(scene: Scene): Overlap[] {
       if (hit.length === 0) continue
       out.push({ kind: 'aisle', equipment: id, aisle: a.id, regions: hit.map((p) => clipToRect(p, r)).filter((p) => p.length > 0) })
     }
+  // 余白どうし・余白と通路・余白と敷地の外は、まだ示さない（DECISIONS.md の「未決」）
+  for (const owner of scene.equipment) {
+    const zone = clearanceZone(owner)
+    if (zone.length === 0) continue
+    for (const { id, r } of fps) {
+      if (id === owner.id) continue
+      const regions = zone.map((z) => rectOverlap(z, r)).filter((q): q is Rect => q !== null)
+      if (regions.length > 0) out.push({ kind: 'clearance', owner: owner.id, equipment: id, regions })
+    }
+  }
   return out
 }
 
-// 重なりにかかわる設備の id
+// 本体の重なり（設備どうし、設備と通路）にかかわる設備の id
 export function overlappingEquipment(overlaps: readonly Overlap[]): Set<string> {
   const ids = new Set<string>()
   for (const o of overlaps) {
     if (o.kind === 'equipment') ids.add(o.a).add(o.b)
-    else ids.add(o.equipment)
+    else if (o.kind === 'aisle') ids.add(o.equipment)
   }
+  return ids
+}
+
+// 余白への入り込みにかかわる設備の id（入っている設備と、余白の持ち主）
+export function clearanceEquipment(overlaps: readonly Overlap[]): Set<string> {
+  const ids = new Set<string>()
+  for (const o of overlaps) if (o.kind === 'clearance') ids.add(o.owner).add(o.equipment)
   return ids
 }

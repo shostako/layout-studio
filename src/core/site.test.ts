@@ -12,7 +12,7 @@ const box = rectSite(0, 0, 30000, 20000)
 const ell = site([0, 0], [20000, 0], [20000, 10000], [30000, 10000], [30000, 20000], [0, 20000])
 
 function eq(id: string, over: Partial<Equipment> = {}): Equipment {
-  return { id, kind: 'molding-machine', name: id, x: 5000, y: 5000, width: 4000, depth: 2000, rotation: 0, color: '#888', ...over }
+  return { id, kind: 'molding-machine', name: id, x: 5000, y: 5000, width: 4000, depth: 2000, rotation: 0, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 }, ...over }
 }
 
 function ok(scene: Scene, cmd: Parameters<typeof applyCommand>[1]): Scene {
