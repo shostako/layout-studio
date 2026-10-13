@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   build:
+    # 手で走らせるとき（workflow_dispatch）は別のブランチも選べてしまうので、main のときだけ配る
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
