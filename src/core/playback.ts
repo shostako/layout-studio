@@ -8,10 +8,13 @@
 // - 分岐: 行き先がどれも台車ストッカーなら、今のストッカーが満杯になるまで入れ、満杯で次（予備）へ切り替える。
 //   それ以外は交互に振り分ける（受けられないストッカーは飛ばす）。どこも受けられなければ、その設備で待たせる。
 // - ストッカーは容量の数で満杯。満杯になったら AGV を呼び、来るまで受けない。
-// - AGV は 1 台。通路の最初の頂点（いちばん先に描いた通路の始点）を出入り口にし、呼ばれた順にストッカーへ行き、
+// - AGV の台数はシーンの flow.agvCount。どれも通路の最初の頂点（いちばん先に描いた通路の始点）を出入り口にし、
+//   空いている AGV（番号の小さい順）が、呼ばれた順にストッカーへ行き、
 //   積み替えの時間のあいだ止まって満杯の台車を空の台車と替え、出入り口へ運び出す。通路は両方向に走れる。
 //   一方通行（oneWay）の通路は頂点の順にだけ走る。帰りは行きの逆ではなく、乗り場から出入り口への近道を別に探す。
 //   ストッカーへは、いちばん近い中心線の上の点（乗り場）まで行く。
+// - AGV どうしはぶつからず、すれ違いも追い越しも待たない（通路の幅で止まる・譲るは扱わない）。
+//   稼働率は、出入り口で待っていない時間（行く・替える・帰る）の割合。
 
 import { linkSegment } from './flow'
 import { buildRouteNet, pathLength, pointAlong, shortestPath } from './route'
@@ -64,7 +67,8 @@ export type FlowState = {
   cursor: Record<string, number> // 分岐の、今の（次の）行き先の番号
   stockers: Record<string, StockerState>
   requests: string[] // AGV を呼んでいるストッカー（呼んだ順）
-  agv: AgvState
+  agvs: AgvState[]
+  agvBusy: number[] // AGV ごとの、出入り口で待っていなかった時間の合計（秒）
   produced: number // 生まれた成形品の数
   finished: number // ストッカー以外の終わりに着いた数
   carts: number // 運び出した台車の数
@@ -138,7 +142,8 @@ export function prepareFlow(scene: Scene): FlowModel {
   return { sources, next, stockers, isStocker, segments, home, docks, routes, returns, warnings }
 }
 
-export function initialFlow(model: FlowModel): FlowState {
+export function initialFlow(model: FlowModel, params: FlowParams = DEFAULT_FLOW_PARAMS): FlowState {
+  const n = Math.max(1, Math.floor(params.agvCount))
   return {
     time: 0,
     nextPartId: 1,
@@ -148,7 +153,8 @@ export function initialFlow(model: FlowModel): FlowState {
     cursor: {},
     stockers: Object.fromEntries(model.stockers.map((id) => [id, { count: 0, incoming: 0, full: false }])),
     requests: [],
-    agv: { phase: 'idle' },
+    agvs: Array.from({ length: n }, () => ({ phase: 'idle' }) as AgvState),
+    agvBusy: Array.from({ length: n }, () => 0),
     produced: 0,
     finished: 0,
     carts: 0,
@@ -232,40 +238,58 @@ function step(model: FlowModel, params: FlowParams, st: FlowState, dt: number): 
     st.parts = st.parts.filter((p) => p.s < p.length)
     for (const p of arrived) arrive(model, params, st, p.to, p.s - p.length)
   }
-  // AGV
+  // AGV。先に、今空いている AGV が番号の小さい順に呼び出しを受ける（動いている AGV がこの刻みのうちに戻って
+  // 先に受けてしまわないように）。そのあと各 AGV を進め、刻みの途中で空いた AGV は残りの呼び出しを受ける
+  st.agvs.forEach((a, i) => {
+    if (a.phase === 'idle') claimRequest(model, st, i)
+  })
+  st.agvs.forEach((_, i) => stepAgv(model, params, st, i, dt))
+}
+
+// 空いている AGV i に、行って帰れるストッカーの呼び出しを古い順に 1 つ渡す。渡せたら true
+function claimRequest(model: FlowModel, st: FlowState, i: number): boolean {
+  const k = st.requests.findIndex((id) => model.routes[id] && model.returns[id])
+  if (k < 0) return false
+  const [id] = st.requests.splice(k, 1)
+  st.agvs[i] = { phase: 'going', stocker: id!, s: 0 }
+  return true
+}
+
+function stepAgv(model: FlowModel, params: FlowParams, st: FlowState, i: number, dt: number): void {
   let left = dt
   while (left > 0) {
-    const agv = st.agv
+    const agv = st.agvs[i]!
     if (agv.phase === 'idle') {
-      const k = st.requests.findIndex((id) => model.routes[id] && model.returns[id])
-      if (k < 0) break
-      const [id] = st.requests.splice(k, 1)
-      st.agv = { phase: 'going', stocker: id!, s: 0 }
+      if (!claimRequest(model, st, i)) break
     } else if (agv.phase === 'going' || agv.phase === 'returning') {
       const len = pathLength((agv.phase === 'going' ? model.routes : model.returns)[agv.stocker]!)
       const need = (len - agv.s) / params.agvSpeed
       if (need > left) {
         agv.s += params.agvSpeed * left
+        st.agvBusy[i]! += left
         left = 0
       } else {
         left -= need
-        if (agv.phase === 'going') st.agv = { phase: 'loading', stocker: agv.stocker, left: params.agvHandlingTime }
+        st.agvBusy[i]! += need
+        if (agv.phase === 'going') st.agvs[i] = { phase: 'loading', stocker: agv.stocker, left: params.agvHandlingTime }
         else {
           st.carts++
-          st.agv = { phase: 'idle' }
+          st.agvs[i] = { phase: 'idle' }
         }
       }
     } else if (agv.phase === 'loading') {
       if (agv.left > left) {
         agv.left -= left
+        st.agvBusy[i]! += left
         left = 0
       } else {
         left -= agv.left
+        st.agvBusy[i]! += agv.left
         // 満杯の台車を空の台車と替えた。ストッカーはまた受けられる
         const s = st.stockers[agv.stocker]!
         s.count = 0
         s.full = false
-        st.agv = { phase: 'returning', stocker: agv.stocker, s: 0 }
+        st.agvs[i] = { phase: 'returning', stocker: agv.stocker, s: 0 }
       }
     }
   }
@@ -283,9 +307,15 @@ export function stepFlow(model: FlowModel, params: FlowParams, state: FlowState,
   return st
 }
 
+export type AgvView = { at: Point; angle: number; loaded: boolean }
 export type FlowView = {
   parts: Point[]
-  agv: { at: Point; angle: number; loaded: boolean } | null
+  agvs: AgvView[]
+}
+
+// AGV ごとの稼働率（0〜1）。時刻 0 では 0
+export function agvUtilization(state: FlowState): number[] {
+  return state.agvBusy.map((b) => (state.time > 0 ? Math.min(1, b / state.time) : 0))
 }
 
 // 描く位置: 移っている成形品と AGV
@@ -295,21 +325,20 @@ export function flowView(model: FlowModel, state: FlowState): FlowView {
     const t = Math.min(1, p.s / p.length)
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
   })
-  let agv: FlowView['agv'] = null
-  const a = state.agv
-  if (model.home) {
-    if (a.phase === 'idle') {
-      const first = Object.values(model.routes).find((r) => r && r.length > 1)
-      agv = { at: model.home, angle: first ? pointAlong(first, 0).angle : 0, loaded: false }
-    } else {
-      const route = model.routes[a.stocker]!
-      const len = pathLength(route)
-      if (a.phase === 'going') agv = { ...pointAlong(route, a.s), loaded: false }
-      else if (a.phase === 'loading') agv = { ...pointAlong(route, len), loaded: false }
-      else agv = { ...pointAlong(model.returns[a.stocker]!, a.s), loaded: true }
-    }
-  }
-  return { parts, agv }
+  const home = model.home
+  const agvs: AgvView[] = home
+    ? state.agvs.map((a) => {
+        if (a.phase === 'idle') {
+          const first = Object.values(model.routes).find((r) => r && r.length > 1)
+          return { at: home, angle: first ? pointAlong(first, 0).angle : 0, loaded: false }
+        }
+        const route = model.routes[a.stocker]!
+        if (a.phase === 'going') return { ...pointAlong(route, a.s), loaded: false }
+        if (a.phase === 'loading') return { ...pointAlong(route, pathLength(route)), loaded: false }
+        return { ...pointAlong(model.returns[a.stocker]!, a.s), loaded: true }
+      })
+    : []
+  return { parts, agvs }
 }
 
 // 時刻の表示（h:mm:ss、1 時間未満は m:ss）
