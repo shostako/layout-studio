@@ -9,7 +9,7 @@ PR ごとに更新する。段階の中身は `docs/SPEC.md`。
 ## 次にやること
 
 - `docs/SPEC.md` の段階は一通り済んだ。次は、実際の見積もりで使って出た要望から決める（ショスタコと相談）。運用で出た要望の 1 つ目として、通路の一方通行を足した（2026-10-13）。2 つ目として、スマホで触れるようにした（2026-10-13）。3 つ目として、AGV を複数台にした（2026-10-13）。
-- スマホからアプリを開く URL（GitHub Pages など）を決める。DECISIONS.md の「未決」。
+- GitHub Pages で配る: ワークフローの中身は `docs/pages-workflow.yml` に用意した。ショスタコが `.github/workflows/pages.yml` に写し、Settings の Pages を「GitHub Actions」にする（`docs/pages.md`）。
 
 ## 済んだこと
 
