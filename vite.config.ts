@@ -4,5 +4,5 @@ export default defineConfig({
   // 相対パスで配る（どこに置いても動くように）
   base: './',
   build: { outDir: 'dist' },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'mcp/**/*.test.ts'] },
 })
