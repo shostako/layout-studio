@@ -1,4 +1,5 @@
 import './ui/style.css'
+import { mountAi } from './ui/ai'
 import { mountAisles } from './ui/aisle'
 import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
@@ -23,4 +24,5 @@ if (app) {
   const plans = mountPlans(canvas, editor)
   mountStorage(canvas, editor, plans)
   mountCompare(canvas, editor, plans)
+  mountAi(canvas, editor)
 }

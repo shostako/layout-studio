@@ -778,3 +778,38 @@ body {
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
+.ai-panel select,
+.ai-panel textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0;
+  font: inherit;
+}
+.ai-panel textarea {
+  resize: vertical;
+}
+.ai-panel details {
+  margin: 4px 0;
+  color: var(--muted);
+}
+.ai-panel summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.ai-panel .actions[hidden] {
+  display: none;
+}
+.ai-answer:not(:empty) {
+  margin: 6px 0 2px;
+  line-height: 1.5;
+}
+.ai-steps {
+  margin: 2px 0;
+  padding-left: 1.6em;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.ai-steps:empty {
+  display: none;
+}

@@ -28,6 +28,7 @@ export type Command =
   | { type: 'unlink'; links: Link[] } // 工程のつなぎを外す
   | { type: 'setFlow'; changes: Partial<FlowSettings> } // 流れの再生の数値（サイクル・ストッカーの容量・AGV の速さ・入れ替えの時間）を変える。書いたものだけ変える
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
+  | { type: 'batch'; commands: Command[] } // コマンドを順に当て、まとめて 1 つの操作にする（AI の 1 回の応答など）。1 つでも断られたら、どれも当てない
 
 // update で変えられる項目。書いたものだけ変える
 // clearance は書いた辺だけ変える
@@ -78,6 +79,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return setFlow(scene, cmd.changes)
     case 'loadScene':
       return loadScene(cmd.scene)
+    case 'batch':
+      return batch(scene, cmd.commands)
   }
 }
 
@@ -351,6 +354,19 @@ function setFlow(scene: Scene, changes: Partial<FlowSettings>): CommandResult {
   const flow = { ...scene.flow }
   for (const k of FLOW_KEYS) if (c[k] !== undefined) flow[k] = c[k] as number
   return { ok: true, scene: { ...scene, flow } }
+}
+
+// 前のコマンドの結果に次のコマンドを当てていく。断られたら何番目の何かを理由に添える
+function batch(scene: Scene, commands: Command[]): CommandResult {
+  if (!Array.isArray(commands) || commands.length === 0) return fail('まとめるコマンドがありません')
+  let next = scene
+  for (const [i, c] of commands.entries()) {
+    if (typeof c !== 'object' || c === null) return fail(`${i + 1} 番目がコマンドの形ではありません`)
+    const r = applyCommand(next, c)
+    if (!r.ok) return fail(`${i + 1} 番目（${String(c.type)}）: ${r.error}`)
+    next = r.scene
+  }
+  return { ok: true, scene: next }
 }
 
 // 空のシーンに背景・敷地・設備・通路・つなぎを 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
