@@ -137,6 +137,12 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
   else canvas.side.append(h)
   h.after(box)
 
+  // 案の切り替えやファイルの読み込みで、別のシーンの同じ id の通路を選んだままにしない
+  editor.onReset(() => {
+    selected = []
+    vertex = null
+  })
+
   const liveSelection = () => selected.filter((id) => editor.scene().aisles.some((a) => a.id === id))
   const select = (ids: string[]) => {
     selected = ids
