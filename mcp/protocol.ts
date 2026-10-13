@@ -1,7 +1,7 @@
-// MCP（Model Context Protocol）の受け答え: JSON-RPC 2.0 の 1 通を受け、返す 1 通を作る（通知なら null）。入出力に触らない。
+// MCP（Model Context Protocol）の受け答え: JSON-RPC 2.0 の 1 通を受け、返す 1 通を作る（通知なら null）。入出力は ctx を通す。
 // 使うのは initialize・ping・tools/list・tools/call だけ。stdio では 1 行に 1 通の JSON を流す（server.ts）。
 
-import { TOOLS, callTool, type FileIo } from './tools'
+import { TOOLS, callTool, type Context } from './tools'
 
 // 受け付ける MCP の版。相手が言った版が知っているものならそれを、知らなければいちばん新しいものを返す
 export const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const
@@ -10,6 +10,7 @@ export const SERVER_INFO = { name: 'layout-studio', version: '0.1.0' }
 const INSTRUCTIONS =
   'layout-studio（工場の設備レイアウトの図面エディタ）の案の JSON ファイルを読み、配置の指示を確かめて当てる道具です。' +
   'まず get_instructions で指示の書き方を読み、summarize で今の配置を見て、check_commands で確かめてから apply_commands で当ててください。' +
+  '利用者が画面の「AI とつなぐ」を押していれば、file を省くとその画面に当て、その場で図面に出ます（元に戻す 1 回で戻ります）。' +
   '長さは mm、原点は図面の左上で右が +x、下が +y です。'
 
 type Id = string | number | null
@@ -27,7 +28,7 @@ export function parseError(): Message {
   return failure(null, PARSE_ERROR, 'JSON として読めませんでした')
 }
 
-export function handleMessage(msg: unknown, io: FileIo): Message | null {
+export async function handleMessage(msg: unknown, ctx: Context): Promise<Message | null> {
   if (typeof msg !== 'object' || msg === null || Array.isArray(msg)) return failure(null, INVALID_REQUEST, '要求の形ではありません')
   const m = msg as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown }
   const hasId = 'id' in m && (typeof m.id === 'string' || typeof m.id === 'number')
@@ -53,7 +54,7 @@ export function handleMessage(msg: unknown, io: FileIo): Message | null {
       const args = typeof params.arguments === 'object' && params.arguments !== null ? (params.arguments as Record<string, unknown>) : {}
       let r
       try {
-        r = callTool(name, args, io)
+        r = await callTool(name, args, ctx)
       } catch (e) {
         r = { text: `道具の中で失敗しました: ${e instanceof Error ? e.message : String(e)}`, isError: true }
       }

@@ -6,6 +6,7 @@ import { mountCanvas } from './ui/canvas'
 import { mountCompare } from './ui/compare'
 import { mountEditor } from './ui/editor'
 import { mountFlow } from './ui/flow'
+import { mountLive } from './ui/live'
 import { mountPlans } from './ui/plans'
 import { mountPlayback } from './ui/playback'
 import { mountSite } from './ui/site'
@@ -25,4 +26,5 @@ if (app) {
   mountStorage(canvas, editor, plans)
   mountCompare(canvas, editor, plans)
   mountAi(canvas, editor)
+  mountLive(canvas, editor, plans)
 }

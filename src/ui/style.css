@@ -817,3 +817,10 @@ body {
   font: 11px/1.4 ui-monospace, monospace;
   white-space: pre;
 }
+.live-panel input[type='number'] {
+  width: 6em;
+  margin-left: 4px;
+}
+.live-panel .hint:empty {
+  display: none;
+}
