@@ -6,13 +6,38 @@ import type { Link } from './flow'
 import type { Site } from './site'
 
 // 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）、
-// 版 5 で工程のつなぎ（links）を足した
-export const SCENE_VERSION = 5
+// 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）を足した
+export const SCENE_VERSION = 6
 
 export type Rotation = 0 | 90 | 180 | 270
 
 // 保守用の余白（mm）。回転 0 のときの上・右・下・左の辺から外へ取る幅。設備と一緒に回る
 export type Clearance = { top: number; right: number; bottom: number; left: number }
+
+// 流れの再生の数値。案ごとに持ち、保存する（案件ごとにサイクルや台車の大きさが違うため）
+export type FlowSettings = {
+  cycleTime: number // 成形のサイクル時間（秒）
+  stockerCapacity: number // ストッカー 1 台に入る数（満杯の数）
+  agvSpeed: number // AGV の速さ（mm/秒）
+  agvHandlingTime: number // AGV がストッカーで台車を替える時間（秒）
+}
+
+// 最初の値は架空の目安
+export const DEFAULT_FLOW_SETTINGS: FlowSettings = {
+  cycleTime: 30,
+  stockerCapacity: 20,
+  agvSpeed: 1000,
+  agvHandlingTime: 30,
+}
+
+// 受け付ける範囲（下限と上限を含む）。サイクルの下限は、再生の刻み（0.25 秒）で数え落とさず、
+// 成形品が増えすぎて画面が重くならないように 1 秒にした。容量は整数
+export const FLOW_LIMITS: Record<keyof FlowSettings, { min: number; max: number; integer?: boolean; label: string }> = {
+  cycleTime: { min: 1, max: 3600, label: 'サイクル時間（秒）' },
+  stockerCapacity: { min: 1, max: 10000, integer: true, label: 'ストッカーの容量（個）' },
+  agvSpeed: { min: 10, max: 10000, label: 'AGV の速さ（mm/秒）' },
+  agvHandlingTime: { min: 0, max: 3600, label: '台車の入れ替えの時間（秒）' },
+}
 
 export const NO_CLEARANCE: Clearance = { top: 0, right: 0, bottom: 0, left: 0 }
 
@@ -37,10 +62,11 @@ export type Scene = {
   equipment: Equipment[]
   aisles: Aisle[] // AGV の通路
   links: Link[] // 工程のつなぎ（設備から設備へ、ものが流れる向き）
+  flow: FlowSettings // 流れの再生の数値
 }
 
 export function createEmptyScene(): Scene {
-  return { version: SCENE_VERSION, background: null, site: null, equipment: [], aisles: [], links: [] }
+  return { version: SCENE_VERSION, background: null, site: null, equipment: [], aisles: [], links: [], flow: { ...DEFAULT_FLOW_SETTINGS } }
 }
 
 // 回転を考えた、図面の上で占める外接の長方形（左上と大きさ）

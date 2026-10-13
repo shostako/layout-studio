@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Aisle } from './aisle'
 import type { Link } from './flow'
-import { DEFAULT_FLOW_PARAMS, flowView, formatClock, initialFlow, prepareFlow, stepFlow, type FlowParams } from './playback'
-import { createEmptyScene, type Equipment, type Scene } from './scene'
+import { applyCommand } from './commands'
+import { createHistory, execute, undo } from './history'
+import { DEFAULT_FLOW_PARAMS, flowParams, flowView, formatClock, initialFlow, prepareFlow, stepFlow, type FlowParams } from './playback'
+import { DEFAULT_FLOW_SETTINGS, createEmptyScene, type Equipment, type Scene } from './scene'
+import { parseScene, serializeScene } from './sceneFile'
 
 function eq(id: string, kind: string, x: number, y = 0): Equipment {
   return { id, kind, name: id, x, y, width: 1000, depth: 1000, rotation: 0, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 } }
@@ -160,5 +163,64 @@ describe('formatClock', () => {
   it('m:ss と h:mm:ss', () => {
     expect(formatClock(65.7)).toBe('1:05')
     expect(formatClock(3725)).toBe('1:02:05')
+  })
+})
+
+describe('流れの再生の数値（シーンの flow と setFlow）', () => {
+  const ok = (r: ReturnType<typeof applyCommand>) => {
+    if (!r.ok) throw new Error(r.error)
+    return r.scene
+  }
+  const err = (r: ReturnType<typeof applyCommand>) => (r.ok ? '' : r.error)
+
+  it('新しいシーンは架空の目安を持ち、flowParams で移る速さを足す', () => {
+    const s = createEmptyScene()
+    expect(s.flow).toEqual(DEFAULT_FLOW_SETTINGS)
+    expect(flowParams(s.flow)).toEqual(DEFAULT_FLOW_PARAMS)
+  })
+
+  it('書いた数値だけ変える。元のシーンは変えない', () => {
+    const s = createEmptyScene()
+    const t = ok(applyCommand(s, { type: 'setFlow', changes: { cycleTime: 12.5, agvSpeed: 1500 } }))
+    expect(t.flow).toEqual({ ...DEFAULT_FLOW_SETTINGS, cycleTime: 12.5, agvSpeed: 1500 })
+    expect(s.flow).toEqual(DEFAULT_FLOW_SETTINGS)
+  })
+
+  it('範囲の外・整数でない容量・空の変更は理由つきで断る', () => {
+    const s = createEmptyScene()
+    const set = (changes: Record<string, unknown>) => err(applyCommand(s, { type: 'setFlow', changes } as never))
+    expect(set({ cycleTime: 0 })).toMatch('サイクル時間')
+    expect(set({ cycleTime: 0.5 })).toMatch('1 以上')
+    expect(set({ stockerCapacity: 2.5 })).toMatch('整数')
+    expect(set({ agvSpeed: -1 })).toMatch('AGV の速さ')
+    expect(set({ agvHandlingTime: Number.NaN })).toMatch('入れ替え')
+    expect(set({ cycleTime: '30' })).toMatch('サイクル時間')
+    expect(set({})).toMatch('ありません')
+    expect(ok(applyCommand(s, { type: 'setFlow', changes: { agvHandlingTime: 0 } })).flow.agvHandlingTime).toBe(0)
+  })
+
+  it('元に戻すで前の数値に戻る', () => {
+    const h0 = createHistory(createEmptyScene())
+    const r = execute(h0, { type: 'setFlow', changes: { stockerCapacity: 40 } })
+    expect(r.ok && r.history.present.flow.stockerCapacity).toBe(40)
+    expect(undo(r.history).present.flow.stockerCapacity).toBe(20)
+  })
+
+  it('ファイルに書いて読むと数値が残る。版 5 のファイルは架空の目安で読む', () => {
+    const s = ok(applyCommand(createEmptyScene(), { type: 'setFlow', changes: { cycleTime: 45, stockerCapacity: 12 } }))
+    const back = parseScene(serializeScene(s))
+    expect(back.ok && back.scene.flow).toEqual(s.flow)
+    const v5 = parseScene(JSON.stringify({ version: 5, background: null, site: null, equipment: [], aisles: [], links: [] }))
+    expect(v5.ok && v5.scene.flow).toEqual(DEFAULT_FLOW_SETTINGS)
+    const bad = parseScene(JSON.stringify({ ...s, flow: { ...s.flow, stockerCapacity: 0 } }))
+    expect(bad.ok ? '' : bad.error).toMatch('容量')
+  })
+
+  it('数値で再生が変わる: 容量を倍にすると、同じ時間で運び出す台車が減る', () => {
+    const base = { ...P, agvSpeed: 1e9, agvHandlingTime: 0.5 }
+    const a = run(cell(), 60, base).state
+    const b = run(cell(), 60, { ...base, stockerCapacity: 6 }).state
+    expect(a.produced).toBe(b.produced)
+    expect(b.carts).toBeLessThan(a.carts)
   })
 })
