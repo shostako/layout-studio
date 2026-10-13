@@ -20,10 +20,10 @@ export type ExportFrame = {
   pxPerMm: number
 }
 
-// 何も無いシーンなら null（書き出すものが無い）
-export function exportFrame(scene: Scene, longSidePx = EXPORT_LONG_SIDE_PX): ExportFrame | null {
+// 何も無いシーンなら null（書き出すものが無い）。背景を隠しているとき（欄の「表示」を外したとき）は、背景を範囲に入れない
+export function exportFrame(scene: Scene, longSidePx = EXPORT_LONG_SIDE_PX, withBackground = true): ExportFrame | null {
   const rects: Rect[] = [
-    ...(scene.background ? [backgroundRect(scene.background)] : []),
+    ...(scene.background && withBackground ? [backgroundRect(scene.background)] : []),
     ...(scene.site ? [siteBounds(scene.site)] : []),
     ...scene.equipment.map(clearanceRect),
     ...aisleBounds(scene),

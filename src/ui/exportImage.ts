@@ -103,7 +103,9 @@ export function mountExportImage(canvas: Canvas, editor: Editor, plans: Plans): 
   note.className = 'save-state'
   b.addEventListener('click', async () => {
     b.blur()
-    const frame = exportFrame(editor.scene())
+    // 背景を隠しているとき（背景の欄の「表示」を外したとき）は、背景を写さず範囲にも入れない
+    const bgShown = Array.from(canvas.underlay.querySelectorAll('image')).some((i) => i.style.display !== 'none')
+    const frame = exportFrame(editor.scene(), undefined, bgShown)
     if (!frame) {
       note.textContent = '図面に何もありません'
       return

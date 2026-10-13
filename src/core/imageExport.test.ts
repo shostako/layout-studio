@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createBackground } from './background'
 import { exportFrame, imageFileName, scaleBarLength } from './imageExport'
 import { createEmptyScene, type Equipment } from './scene'
 import { rectSite } from './site'
@@ -36,6 +37,16 @@ describe('exportFrame', () => {
     expect(f.view.x).toBeLessThanOrEqual(0)
     expect(f.view.x + f.view.width).toBeGreaterThanOrEqual(30000)
     expect(f.view.y + f.view.height).toBeGreaterThanOrEqual(20000)
+  })
+
+  it('背景を隠しているときは、背景を範囲に入れない', () => {
+    const background = createBackground('data:image/png;base64,', 'bg.png', 1000, 1000) // 幅 20 m の背景
+    const s = { ...createEmptyScene(), background, equipment: [eq('a', 50000, 50000)] }
+    const shown = exportFrame(s)!
+    const hidden = exportFrame(s, undefined, false)!
+    expect(shown.view.width).toBeGreaterThan(50000)
+    expect(hidden.view.width).toBeLessThan(5000)
+    expect(exportFrame({ ...createEmptyScene(), background }, undefined, false)).toBeNull()
   })
 
   it('大きさは上限で止める', () => {

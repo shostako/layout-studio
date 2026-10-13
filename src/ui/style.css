@@ -988,12 +988,13 @@ body {
 .mono .equipment.selected rect {
   stroke: var(--axes);
 }
+.mono .equipment.in-clearance rect {
+  stroke: #ef6c00;
+}
+/* 重なり・はみ出しの赤は、余白への入り込みの橙より後に置いて勝たせる（色つきの表示と同じ優先） */
 .mono .equipment.overlap rect,
 .mono .equipment.outside rect {
   stroke: #d32f2f;
-}
-.mono .equipment.in-clearance rect {
-  stroke: #ef6c00;
 }
 .mono .clearance-zone {
   fill: none;
