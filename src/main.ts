@@ -11,6 +11,7 @@ import { mountPlans } from './ui/plans'
 import { mountPlayback } from './ui/playback'
 import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
+import { mountTouch } from './ui/touch'
 
 const app = document.getElementById('app')
 if (app) {
@@ -27,4 +28,6 @@ if (app) {
   mountCompare(canvas, editor, plans)
   mountAi(canvas, editor)
   mountLive(canvas, editor, plans)
+  // 道具バーの先頭に「パネル」を置くので、道具バーに足す部品の後に組む
+  mountTouch(canvas, editor)
 }

@@ -15,6 +15,8 @@ import { formatLength, type Point } from '../core/viewport'
 const SVG_NS = 'http://www.w3.org/2000/svg'
 // この px より動かしたらドラッグとみなす（クリックで設備がずれないように）
 const DRAG_THRESHOLD_PX = 3
+// 指は触れたときに少し揺れるので、これより動いたらドラッグとみなす
+const TOUCH_SLOP_PX = 10
 // スナップしないときの矢印キー 1 回の移動量
 const NUDGE_NO_SNAP = 10
 
@@ -60,6 +62,9 @@ export type Editor = {
   onGrab(listener: (at: Point, e: PointerEvent) => Grab | null): void
   // 今描いているシーン（ドラッグ中は、仮に当てたコマンドの結果）
   shown(): Scene
+  // 複数選ぶ（Shift を押したままと同じ。指で触る画面のため）
+  multiSelect(): boolean
+  setMultiSelect(on: boolean): void
 }
 
 // 他の部品が引き受けるドラッグ。動かすたびに仮のコマンドを返し、editor がそれを当てた結果を描く。離したときに 1 回だけ実行する。
@@ -69,6 +74,8 @@ export type Grab = {
   click?(): void
   // 離した後に呼ぶ。ok はコマンドが通ったか
   end?(ok: boolean): void
+  // 指で触ったときは、動かすと画面の移動にし、動かさずに離したら click を呼ぶ（まだ選んでいないものを指で動かさないため）
+  panOnTouch?: boolean
 }
 
 type Mode =
@@ -119,6 +126,9 @@ export function mountEditor(canvas: Canvas): Editor {
   const grabListeners: ((at: Point, e: PointerEvent) => Grab | null)[] = []
   const claimListeners: ((owner: string) => void)[] = []
   let lastShown: Scene | null = null
+  let multi = false
+  // 指の 1 本での操作。動かすと画面の移動（canvas が受ける）、動かさずに離すと tap を呼ぶ
+  let touchTap: { pointerId: number; startClient: Point; moved: boolean; tap: () => void } | null = null
 
   // 今の操作をやめて別の操作に移る。道具を使っていたら知らせる
   const setMode = (next: Mode) => {
@@ -593,9 +603,94 @@ export function mountEditor(canvas: Canvas): Editor {
       rotation: m.rotation,
     })
 
-  // ---- マウス ----
+  // ---- マウスと指 ----
+  // 指で触る画面の決まり: 選んでいる設備・つかめる頂点は指で動かす。それ以外は、動かすと画面の移動、
+  // 動かさずに離すとマウスのクリックと同じ（選ぶ・置く・道具の点を拾う）。2 本指は canvas の拡大縮小と移動
   const svgEl = canvas.svg
+  // 画面はまだ動かさない。触って離すつもりの指の揺れで図面がずれないよう、TOUCH_SLOP_PX を超えてから動かす
+  const startTouchTap = (e: PointerEvent, tap: () => void) => {
+    touchTap = { pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY }, moved: false, tap }
+  }
+  const onTouchDown = (e: PointerEvent, at: Point) => {
+    if (mode.type === 'tool') {
+      const tool = mode.tool
+      startTouchTap(e, () => {
+        if (mode.type !== 'tool' || mode.tool !== tool) return
+        pointer = at
+        tool.pointerDown(at, e)
+        render()
+      })
+      return
+    }
+    if (mode.type === 'placing') {
+      startTouchTap(e, () => {
+        if (mode.type !== 'placing') return
+        const m = mode
+        const eq = { ...ghost(m, at), id: nextEquipmentId(scene()), name: nextEquipmentName(scene(), m.template) }
+        setMode({ type: 'idle' })
+        if (run({ type: 'add', equipment: eq })) selected = [eq.id]
+        render()
+      })
+      return
+    }
+    for (const f of grabListeners) {
+      const grab = f(at, e)
+      if (!grab) continue
+      if (grab.panOnTouch) {
+        startTouchTap(e, () => {
+          grab.click?.()
+          render()
+        })
+        return
+      }
+      mode = { type: 'grab', pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY }, grab, cmd: null, moved: false }
+      render()
+      return
+    }
+    const hit = hitTest(scene(), at)
+    if (hit && !multi && selected.includes(hit)) {
+      mode = {
+        type: 'dragging',
+        pointerId: e.pointerId,
+        startClient: { x: e.clientX, y: e.clientY },
+        startWorld: at,
+        grabId: hit,
+        ids: [...selected],
+        dx: 0,
+        dy: 0,
+        moved: false,
+      }
+      render()
+      return
+    }
+    startTouchTap(e, () => {
+      if (mode.type !== 'idle') return
+      if (!hit) {
+        if (!multi) selected = []
+        for (const f of emptyClickListeners) f(at, e)
+      } else if (multi) {
+        selected = selected.includes(hit) ? selected.filter((id) => id !== hit) : [...selected, hit]
+      } else {
+        selected = [hit]
+      }
+      render()
+    })
+  }
+  // 2 本目の指が触れたら、1 本指で始めた操作は当てずにやめる
+  canvas.onPinch(() => {
+    touchTap = null
+    if (mode.type === 'dragging' || mode.type === 'grab') {
+      mode = { type: 'idle' }
+      svgEl.classList.remove('dragging')
+      render()
+    }
+  })
   svgEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+      if (canvas.touchCount() > 1 || e.button !== 0) return
+      onTouchDown(e, canvas.toWorld(e.clientX, e.clientY))
+      return
+    }
     if (e.button !== 0 || canvas.isPanKeyDown()) return
     const at = canvas.toWorld(e.clientX, e.clientY)
     pointer = at
@@ -621,13 +716,14 @@ export function mountEditor(canvas: Canvas): Editor {
       return
     }
     const hit = hitTest(scene(), at)
+    const adding = e.shiftKey || multi
     if (!hit) {
-      if (!e.shiftKey) selected = []
+      if (!adding) selected = []
       for (const f of emptyClickListeners) f(at, e)
       render()
       return
     }
-    if (e.shiftKey) {
+    if (adding) {
       selected = selected.includes(hit) ? selected.filter((id) => id !== hit) : [...selected, hit]
       render()
       if (!selected.includes(hit)) return
@@ -649,11 +745,20 @@ export function mountEditor(canvas: Canvas): Editor {
     render()
   })
 
+  const slop = (e: PointerEvent) => (e.pointerType === 'touch' ? TOUCH_SLOP_PX : DRAG_THRESHOLD_PX)
   svgEl.addEventListener('pointermove', (e) => {
+    if (touchTap && e.pointerId === touchTap.pointerId) {
+      if (!touchTap.moved && Math.hypot(e.clientX - touchTap.startClient.x, e.clientY - touchTap.startClient.y) > TOUCH_SLOP_PX) {
+        touchTap.moved = true
+        canvas.beginPan(touchTap.pointerId, touchTap.startClient)
+      }
+      return
+    }
     const at = canvas.toWorld(e.clientX, e.clientY)
-    pointer = at
+    // 指には「今さしている所」が無いので、置く設備の影や道具の線を指に付いてこさせない
+    if (e.pointerType !== 'touch') pointer = at
     if (mode.type === 'dragging' && e.pointerId === mode.pointerId) {
-      const far = Math.hypot(e.clientX - mode.startClient.x, e.clientY - mode.startClient.y) > DRAG_THRESHOLD_PX
+      const far = Math.hypot(e.clientX - mode.startClient.x, e.clientY - mode.startClient.y) > slop(e)
       if (!mode.moved && !far) return
       const grabId = mode.grabId
       const grab = scene().equipment.find((x) => x.id === grabId)
@@ -664,7 +769,7 @@ export function mountEditor(canvas: Canvas): Editor {
       svgEl.classList.add('dragging')
       render()
     } else if (mode.type === 'grab' && e.pointerId === mode.pointerId) {
-      const far = Math.hypot(e.clientX - mode.startClient.x, e.clientY - mode.startClient.y) > DRAG_THRESHOLD_PX
+      const far = Math.hypot(e.clientX - mode.startClient.x, e.clientY - mode.startClient.y) > slop(e)
       if (!mode.moved && !far) return
       mode = { ...mode, cmd: mode.grab.move(at, e), moved: true }
       svgEl.classList.add('dragging')
@@ -675,6 +780,12 @@ export function mountEditor(canvas: Canvas): Editor {
   })
 
   const endDrag = (e: PointerEvent, commit: boolean) => {
+    if (touchTap && e.pointerId === touchTap.pointerId) {
+      const t = touchTap
+      touchTap = null
+      if (commit && !t.moved) t.tap()
+      return
+    }
     if (mode.type === 'grab' && e.pointerId === mode.pointerId) {
       const m = mode
       mode = { type: 'idle' }
@@ -798,6 +909,11 @@ export function mountEditor(canvas: Canvas): Editor {
     onClaim: (f) => claimListeners.push(f),
     onEmptyClick: (f) => emptyClickListeners.push(f),
     onGrab: (f) => grabListeners.push(f),
+    multiSelect: () => multi,
+    setMultiSelect: (on) => {
+      multi = on
+      render()
+    },
     shown: () => lastShown ?? scene(),
   }
 }

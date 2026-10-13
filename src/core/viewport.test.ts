@@ -7,6 +7,7 @@ import {
   gridLines,
   gridStep,
   panBy,
+  pinchView,
   screenToWorld,
   worldToScreen,
   zoomAt,
@@ -50,6 +51,51 @@ describe('panBy', () => {
     const p = panBy(view, 100, -50)
     expect(p.originX).toBeCloseTo(1000 - 100 / 0.05)
     expect(p.originY).toBeCloseTo(2000 + 50 / 0.05)
+    expect(p.scale).toBe(view.scale)
+  })
+})
+
+describe('pinchView', () => {
+  const a = { x: 100, y: 100 }
+  const b = { x: 300, y: 100 }
+
+  it('指の間を 2 倍に広げると 2 倍になり、中点の下の図面座標は動かない', () => {
+    const before = screenToWorld(view, { x: 200, y: 100 })
+    const p = pinchView(view, [a, b], [{ x: 0, y: 100 }, { x: 400, y: 100 }])
+    expect(p.scale).toBeCloseTo(view.scale * 2)
+    const after = screenToWorld(p, { x: 200, y: 100 })
+    expect(after.x).toBeCloseTo(before.x, 6)
+    expect(after.y).toBeCloseTo(before.y, 6)
+  })
+
+  it('指の間が同じまま動かすと、倍率はそのままで図面がついてくる', () => {
+    const before = screenToWorld(view, { x: 200, y: 100 })
+    const p = pinchView(view, [a, b], [{ x: 150, y: 160 }, { x: 350, y: 160 }])
+    expect(p.scale).toBeCloseTo(view.scale)
+    const after = screenToWorld(p, { x: 250, y: 160 })
+    expect(after.x).toBeCloseTo(before.x, 6)
+    expect(after.y).toBeCloseTo(before.y, 6)
+  })
+
+  it('広げながら動かすと、始めの中点にあった点が新しい中点へ来る', () => {
+    const before = screenToWorld(view, { x: 200, y: 100 })
+    const p = pinchView(view, [a, b], [{ x: 50, y: 300 }, { x: 350, y: 300 }])
+    expect(p.scale).toBeCloseTo(view.scale * 1.5)
+    const after = screenToWorld(p, { x: 200, y: 300 })
+    expect(after.x).toBeCloseTo(before.x, 6)
+    expect(after.y).toBeCloseTo(before.y, 6)
+  })
+
+  it('倍率は上下限で止まり、そのときも中点は合う', () => {
+    const before = screenToWorld(view, { x: 200, y: 100 })
+    const p = pinchView(view, [a, b], [{ x: 199.99, y: 100 }, { x: 200.01, y: 100 }])
+    expect(p.scale).toBe(MIN_SCALE)
+    const after = screenToWorld(p, { x: 200, y: 100 })
+    expect(after.x).toBeCloseTo(before.x, 6)
+  })
+
+  it('始めの 2 点がほぼ重なっているときは移動だけにする', () => {
+    const p = pinchView(view, [a, { x: 100.5, y: 100 }], [{ x: 0, y: 0 }, { x: 400, y: 0 }])
     expect(p.scale).toBe(view.scale)
   })
 })

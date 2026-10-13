@@ -6,6 +6,7 @@ import {
   gridLines,
   gridStep,
   panBy,
+  pinchView,
   screenToWorld,
   worldToScreen,
   zoomAt,
@@ -48,6 +49,13 @@ export type Canvas = {
   setHome(rect: Rect | null): void
   // 「全体」の範囲を画面に収める
   fitHome(): void
+  // この指（タッチの pointerId）のドラッグで画面を動かす。from は指を置いた所（clientX, clientY）で、
+  // 次の指の動きから、置いた所からの動き全部を画面に移す。editor が、指が触って離すより大きく動いたときに呼ぶ
+  beginPan(pointerId: number, from: Point): void
+  // 画面に触れている指の数
+  touchCount(): number
+  // 2 本目の指が触れて、拡大縮小と移動を始めたときに呼ぶ（editor が 1 本指の操作をやめる）
+  onPinch(listener: () => void): void
 }
 
 export function mountCanvas(root: HTMLElement): Canvas {
@@ -138,7 +146,11 @@ export function mountCanvas(root: HTMLElement): Canvas {
   const help = document.createElement('span')
   help.className = 'help'
   help.textContent = 'ホイール: 拡大縮小　中・右ボタンか Space＋左ボタンのドラッグ: 画面の移動'
-  toolbar.append(help)
+  // 指で触る画面では、こちらを見せる（style.css の pointer: coarse）
+  const helpTouch = document.createElement('span')
+  helpTouch.className = 'help help-touch'
+  helpTouch.textContent = '1 本指: 動かす・選ぶ　2 本指: 拡大縮小'
+  toolbar.append(help, helpTouch)
 
   const local = (e: MouseEvent): Point => {
     const r = svgEl.getBoundingClientRect()
@@ -165,16 +177,54 @@ export function mountCanvas(root: HTMLElement): Canvas {
 
   let spaceDown = false
   let drag: { id: number; x: number; y: number } | null = null
+  // 触れている指（pointerId → 画面の座標 clientX, clientY）。2 本になったら最初の 2 本で拡大縮小と移動をする
+  const touches = new Map<number, Point>()
+  let pinch: [number, number] | null = null
+  const pinchListeners: (() => void)[] = []
+  const pinchPoints = (): [Point, Point] => {
+    const r = svgEl.getBoundingClientRect()
+    const at = (id: number) => {
+      const c = touches.get(id)!
+      return { x: c.x - r.left, y: c.y - r.top }
+    }
+    return [at(pinch![0]), at(pinch![1])]
+  }
+  let pinchFrom: [Point, Point] | null = null
+
+  // editor より先に登録するので、editor の pointerdown が走る時には指の数が数え終わっている
+  svgEl.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    // 描き直しで指の下の要素が入れ替わっても、指の動きを受け続ける
+    svgEl.setPointerCapture(e.pointerId)
+    if (touches.size === 2 && !pinch) {
+      const ids = [...touches.keys()]
+      pinch = [ids[0]!, ids[1]!]
+      pinchFrom = pinchPoints()
+      drag = null
+      svgEl.classList.remove('panning')
+      for (const f of pinchListeners) f()
+    }
+  })
 
   svgEl.addEventListener('pointerdown', (e) => {
     const pan = e.button === 1 || e.button === 2 || (e.button === 0 && spaceDown)
-    if (!pan) return
+    if (!pan || e.pointerType === 'touch') return
     e.preventDefault()
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY }
     svgEl.setPointerCapture(e.pointerId)
     svgEl.classList.add('panning')
   })
   svgEl.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (pinch && pinch.includes(e.pointerId) && pinchFrom) {
+        const to = pinchPoints()
+        setView(pinchView(view, pinchFrom, to))
+        pinchFrom = to
+        return
+      }
+    }
     if (drag && e.pointerId === drag.id) {
       const dx = e.clientX - drag.x
       const dy = e.clientY - drag.y
@@ -186,6 +236,14 @@ export function mountCanvas(root: HTMLElement): Canvas {
     redraw()
   })
   const endDrag = (e: PointerEvent) => {
+    if (touches.delete(e.pointerId) && pinch?.includes(e.pointerId)) {
+      // 1 本離したら、残った指で画面の移動を続ける
+      pinch = null
+      pinchFrom = null
+      const rest = [...touches.entries()][0]
+      drag = rest ? { id: rest[0], x: rest[1].x, y: rest[1].y } : null
+      return
+    }
     if (!drag || e.pointerId !== drag.id) return
     drag = null
     svgEl.classList.remove('panning')
@@ -245,6 +303,11 @@ export function mountCanvas(root: HTMLElement): Canvas {
       return screenToWorld(view, { x: clientX - r.left, y: clientY - r.top })
     },
     isPanKeyDown: () => spaceDown,
+    beginPan: (pointerId, from) => {
+      drag = { id: pointerId, x: from.x, y: from.y }
+    },
+    touchCount: () => touches.size,
+    onPinch: (f) => pinchListeners.push(f),
     setHome: (rect) => {
       homeRect = rect ?? DEFAULT_HOME
     },

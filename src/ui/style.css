@@ -836,3 +836,110 @@ body {
 .live-panel .hint:empty {
   display: none;
 }
+
+/* ---- 狭い画面と、指で触る画面 ---- */
+/* 道具バーは 1 行のまま、入りきらない分は横に滑らせて見る */
+.toolbar {
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+.toolbar > * {
+  flex: none;
+}
+.toolbar .help-touch {
+  display: none;
+}
+/* 欄を隠すと、キャンバスが横いっぱいになる */
+.canvas-root.side-closed {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'bar'
+    'canvas'
+    'status';
+}
+.canvas-root.side-closed .side {
+  display: none;
+}
+/* キーの代わりのボタン。キャンバスの下の端に重ねる（指で触る画面だけ） */
+.touch-bar {
+  display: none;
+  grid-area: canvas;
+  place-self: end center;
+  z-index: 3;
+  gap: 6px;
+  margin: 8px;
+  padding: 4px;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.touch-bar button {
+  min-height: 40px;
+  padding: 4px 12px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.touch-bar button.active {
+  outline: 2px solid var(--axes);
+  font-weight: 600;
+}
+@media (pointer: coarse) {
+  .toolbar .help {
+    display: none;
+  }
+  .toolbar .help-touch {
+    display: inline;
+  }
+  .touch-bar {
+    display: flex;
+  }
+  /* 指で押しやすい大きさにする */
+  .toolbar button,
+  .toolbar select,
+  .side button {
+    min-height: 36px;
+  }
+}
+/* 狭い画面: 欄はキャンバスの下に出す（「パネル」で出し入れ）。図面は上に残る */
+@media (max-width: 760px) {
+  .canvas-root,
+  .canvas-root.side-closed {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto auto;
+    grid-template-areas:
+      'bar'
+      'canvas'
+      'side'
+      'status';
+  }
+  .side {
+    height: 45dvh;
+    max-height: 45vh;
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+  .status {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 11px;
+  }
+  /* 16 px より小さい入力欄は、iPhone が触ったときに勝手に拡大するので大きくする */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .toolbar .save-state {
+    max-width: 14em;
+  }
+  .compare-panel {
+    max-height: calc(100% - 72px);
+  }
+}

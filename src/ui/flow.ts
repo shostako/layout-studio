@@ -154,8 +154,12 @@ export function mountFlow(canvas: Canvas, editor: Editor): void {
   editor.onGrab((at, e) => {
     const scene = editor.scene()
     if (e.shiftKey || hitTest(scene, at)) return null
-    const hit = linkHitTest(scene, at, HIT_PX / scale())
+    const touch = e.pointerType === 'touch'
+    // 指は先が太いので、当たりの幅を広げる
+    const hit = linkHitTest(scene, at, (HIT_PX * (touch ? 2.5 : 1)) / scale())
     if (!hit) return null
+    // 指では、触って離したら選び、動かしたら画面の移動にする
+    if (touch) return { move: () => null, panOnTouch: true, click: () => select(hit) }
     select(hit)
     // つなぎはドラッグで動かさない（設備を動かせば付いてくる）
     return { move: () => null }
