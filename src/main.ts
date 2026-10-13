@@ -11,8 +11,10 @@ import { mountPlans } from './ui/plans'
 import { mountPlayback } from './ui/playback'
 import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
+import { applySavedTheme, mountTheme } from './ui/theme'
 import { mountTouch } from './ui/touch'
 
+applySavedTheme()
 const app = document.getElementById('app')
 if (app) {
   const canvas = mountCanvas(app)
@@ -30,4 +32,5 @@ if (app) {
   mountLive(canvas, editor, plans)
   // 道具バーの先頭に「パネル」を置くので、道具バーに足す部品の後に組む
   mountTouch(canvas, editor)
+  mountTheme(canvas)
 }

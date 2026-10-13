@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>layout-studio</title>
+  <script>
+    // 前に選んだ色の見え方（src/ui/theme.ts と同じ鍵）を、CSS が描き始める前に当てる。開いた瞬間に違う色が見えないように
+    try {
+      var t = localStorage.getItem('layout-studio:theme')
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
+    } catch (e) {}
+  </script>
 </head>
 <body>
   <div id="app"></div>
