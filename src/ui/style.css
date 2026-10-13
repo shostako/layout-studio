@@ -8,9 +8,12 @@
   --grid-major: #d2d0c9;
   --axes: #d2691e;
   --link: #37474f;
+  color-scheme: light;
 }
+/* 色の見え方は、道具バーの「表示」で自動（OS の設定に従う）・ライト・ダークを選ぶ（src/ui/theme.ts が html に data-theme を付ける）。
+   自動のときは data-theme が無く、OS がダークならダークにする。ダークを選んだときは OS に関わらずダーク */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #1c1d20;
     --fg: #e6e6e6;
     --muted: #9a9a9a;
@@ -20,7 +23,20 @@
     --grid-major: #383a40;
     --axes: #d08050;
     --link: #cfd8dc;
+    color-scheme: dark;
   }
+}
+:root[data-theme='dark'] {
+  --bg: #1c1d20;
+  --fg: #e6e6e6;
+  --muted: #9a9a9a;
+  --bar: #26282c;
+  --line: #3a3c41;
+  --grid-minor: #26282c;
+  --grid-major: #383a40;
+  --axes: #d08050;
+  --link: #cfd8dc;
+  color-scheme: dark;
 }
 html,
 body {
