@@ -7,6 +7,12 @@ import type { Plans } from './plans'
 import type { Scene } from '../core/scene'
 import { parsePlanFile, sceneFileName, serializePlanSet } from '../core/sceneFile'
 
+// 例の配置（架空の寸法）。ファイルは public/examples/ にあり、src/core/examples.test.ts が読めることと注意が無いことを確かめる
+export const EXAMPLES = [
+  { label: '成形機 7 台（4 案）', file: 'molding-7.json' },
+  { label: '成形機 14 台（2 列・4 案）', file: 'molding-14.json' },
+] as const
+
 const DB_NAME = 'layout-studio'
 const STORE = 'autosave'
 // 案の束を書く鍵。案の束より前の自動保存（シーン 1 つ）は OLD_KEY にあり、起動時に案 1 つとして読む
@@ -65,6 +71,18 @@ export function mountStorage(canvas: Canvas, editor: Editor, plans: Plans): void
   input.hidden = true
   mk('開く', 'JSON ファイルを開き、中の案を足す（Ctrl+O。今の案は残る）', () => input.click())
   mk('保存', 'すべての案を 1 つの JSON ファイルに書き出す（Ctrl+S）', () => saveFile())
+  // 例の案（public/examples/ の架空の配置）。選ぶと「開く」と同じく今の案の後ろに足す
+  const examples = document.createElement('select')
+  examples.className = 'examples'
+  examples.title = '例の配置を案として足す（「開く」と同じく、今の案は残る）'
+  examples.append(new Option('例を開く', ''), ...EXAMPLES.map((x) => new Option(x.label, x.file)))
+  examples.addEventListener('change', () => {
+    const x = EXAMPLES.find((e) => e.file === examples.value)
+    examples.value = ''
+    examples.blur()
+    if (x) void openExample(x)
+  })
+  group.append(examples)
   // 開く・新規の結果と、自動保存の状態は別の欄に出す（自動保存が開けなかった知らせを消さないように）
   const note = document.createElement('span')
   note.className = 'save-state'
@@ -95,6 +113,22 @@ export function mountStorage(canvas: Canvas, editor: Editor, plans: Plans): void
     a.download = sceneFileName(new Date())
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const openExample = async (x: (typeof EXAMPLES)[number]) => {
+    let text: string
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}examples/${x.file}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      text = await res.text()
+    } catch (e) {
+      return tell(`例「${x.label}」を読めません: ${e instanceof Error ? e.message : String(e)}`, true)
+    }
+    const r = parsePlanFile(text, x.label)
+    if (!r.ok) return tell(`例「${x.label}」を開けません: ${r.error}`, true)
+    if (plans.run({ type: 'importPlans', plans: r.plans })) {
+      canvas.fitHome()
+      tell(`例「${x.label}」を開いた（案 ${r.plans.length} 件を足した）`)
+    }
   }
   input.addEventListener('change', async () => {
     const f = input.files?.[0]
