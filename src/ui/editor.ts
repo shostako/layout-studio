@@ -1,12 +1,12 @@
-// 設備の配置の操作: ひな形から置く、選ぶ、ドラッグで動かす、スナップ、回転、削除、元に戻す・やり直す。
+// 設備の配置の操作: ひな形から置く、選ぶ、ドラッグで動かす、スナップ、回転、複製、削除、名前・寸法・色の変更、元に戻す・やり直す。
 // シーンは必ずコマンド（src/core/commands.ts）を history.execute に通して変える。
 // 選択・置く途中・ドラッグ中の見た目は画面の状態で、シーンには入れない。
 import type { Canvas } from './canvas'
-import { applyCommand, type Command } from '../core/commands'
+import { applyCommand, type Command, type EquipmentChanges } from '../core/commands'
 import { canRedo, canUndo, createHistory, execute, redo, undo, type History } from '../core/history'
 import { DEFAULT_SNAP, SNAP_STEPS, hitTest, snapCenter, snapMove } from '../core/placement'
 import { equipmentOutsideSite } from '../core/site'
-import { createEmptyScene, footprint, nextEquipmentId, type Equipment, type Rotation, type Scene } from '../core/scene'
+import { createEmptyScene, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, type Equipment, type Rotation, type Scene } from '../core/scene'
 import { TEMPLATES, equipmentFromTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
 import { formatLength, type Point } from '../core/viewport'
 
@@ -102,6 +102,23 @@ export function mountEditor(canvas: Canvas): Editor {
     if (ids.length && run({ type: 'remove', ids })) selected = []
     render()
   }
+  // 選んだ設備を写し、まとめて囲む長方形の幅だけ右に置く。写しを選び直すので、続けて押すと横に並ぶ
+  const duplicateSelection = () => {
+    const ids = liveSelection()
+    const box = equipmentBounds(scene().equipment.filter((e) => ids.includes(e.id)))
+    if (!box) return
+    const order = scene().equipment.filter((e) => ids.includes(e.id)).map((e) => e.id)
+    const newIds = nextEquipmentIds(scene(), order.length)
+    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width, dy: 0 })) selected = newIds
+    render()
+  }
+  // 欄に入った時点の選択を覚えておく。入力中にキャンバスで別の設備を選ぶと、
+  // 確定（blur で change が来る）が選び直した後になるため
+  let editIds: string[] = []
+  const updateSelection = (changes: EquipmentChanges) => {
+    const ids = (editIds.length ? editIds : liveSelection()).filter((id) => scene().equipment.some((e) => e.id === id))
+    if (ids.length) run({ type: 'update', ids, changes })
+  }
   const nudge = (kx: number, ky: number) => {
     const ids = liveSelection()
     const step = snap > 0 ? snap : NUDGE_NO_SNAP
@@ -187,14 +204,50 @@ export function mountEditor(canvas: Canvas): Editor {
   }
   const rotLeft = mkAction('⟲ 90°', '反時計回りに 90 度（Shift+R）', () => rotateSelection(-1))
   const rotRight = mkAction('⟳ 90°', '時計回りに 90 度（R）', () => rotateSelection(1))
+  const dup = mkAction('複製', '選択中の設備を写して右隣に置く（Ctrl+D）', duplicateSelection)
   const del = mkAction('削除', '選択中の設備を消す（Delete）', removeSelection)
+  // 選択中の設備の名前・寸法・色。値を確定したとき（change）に update のコマンドを 1 回出す
+  const props = document.createElement('div')
+  props.className = 'props'
+  const mkProp = (label: string, input: HTMLInputElement) => {
+    const l = document.createElement('label')
+    l.append(label, input)
+    props.append(l)
+    return l
+  }
+  const nameInput = document.createElement('input')
+  nameInput.type = 'text'
+  const widthInput = document.createElement('input')
+  const depthInput = document.createElement('input')
+  for (const i of [widthInput, depthInput]) {
+    i.type = 'number'
+    i.min = '1'
+    i.step = '10'
+  }
+  const colorInput = document.createElement('input')
+  colorInput.type = 'color'
+  const nameRow = mkProp('名前', nameInput)
+  const widthRow = mkProp('幅 mm', widthInput)
+  const depthRow = mkProp('奥行 mm', depthInput)
+  mkProp('色', colorInput)
+  nameInput.addEventListener('change', () => updateSelection({ name: nameInput.value }))
+  widthInput.addEventListener('change', () => updateSelection({ width: Number(widthInput.value) }))
+  depthInput.addEventListener('change', () => updateSelection({ depth: Number(depthInput.value) }))
+  colorInput.addEventListener('change', () => updateSelection({ color: colorInput.value }))
+  for (const i of [nameInput, widthInput, depthInput, colorInput])
+    i.addEventListener('focus', () => (editIds = liveSelection()))
+  // Enter で確定して、キャンバスのキー操作に戻る
+  for (const i of [nameInput, widthInput, depthInput])
+    i.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') i.blur()
+    })
   const msg = document.createElement('div')
   msg.className = 'message'
   const keys = document.createElement('div')
   keys.className = 'keys'
   keys.textContent =
-    'クリック: 選ぶ　Shift+クリック: 足す・外す　ドラッグ: 動かす　R / Shift+R: 回す　矢印: スナップ幅ずつ動かす　Delete: 消す　Ctrl+Z / Ctrl+Y: 元に戻す / やり直す　Esc: やめる'
-  side.append(h1, list, h2, info, actions, msg, keys)
+    'クリック: 選ぶ　Shift+クリック: 足す・外す　ドラッグ: 動かす　R / Shift+R: 回す　矢印: スナップ幅ずつ動かす　Ctrl+D: 複製　Delete: 消す　Ctrl+Z / Ctrl+Y: 元に戻す / やり直す　Esc: やめる'
+  side.append(h1, list, h2, info, props, actions, msg, keys)
 
   // ---- 上の道具バー: 元に戻す・やり直す・スナップ ----
   const group = document.createElement('span')
@@ -303,7 +356,20 @@ export function mountEditor(canvas: Canvas): Editor {
     } else {
       info.textContent = 'なし'
     }
-    for (const b of [rotLeft, rotRight, del]) b.disabled = items.length === 0
+    for (const b of [rotLeft, rotRight, dup, del]) b.disabled = items.length === 0
+    // 名前と寸法は 1 台のときだけ。色は複数でもまとめて変えられる
+    props.hidden = items.length === 0 || mode.type === 'placing'
+    for (const r of [nameRow, widthRow, depthRow]) r.hidden = items.length !== 1
+    const first = items[0]
+    const setValue = (i: HTMLInputElement, v: string) => {
+      if (document.activeElement !== i) i.value = v
+    }
+    if (first) {
+      setValue(nameInput, first.name)
+      setValue(widthInput, String(first.width))
+      setValue(depthInput, String(first.depth))
+      setValue(colorInput, items.every((e) => e.color === first.color) && /^#[0-9a-f]{6}$/i.test(first.color) ? first.color : '#000000')
+    }
     undoBtn.disabled = !canUndo(history)
     redoBtn.disabled = !canRedo(history)
     msg.textContent = message
@@ -411,7 +477,8 @@ export function mountEditor(canvas: Canvas): Editor {
     const mod = e.ctrlKey || e.metaKey
     if (mod && !e.altKey) {
       const k = e.key.toLowerCase()
-      if (k === 'z' && !e.shiftKey) doUndo()
+      if (k === 'd' && !e.shiftKey && mode.type !== 'tool') duplicateSelection()
+      else if (k === 'z' && !e.shiftKey) doUndo()
       else if (k === 'y' || (k === 'z' && e.shiftKey)) doRedo()
       else return
       e.preventDefault()
