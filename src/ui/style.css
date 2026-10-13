@@ -691,3 +691,82 @@ body {
 .link-actions button {
   white-space: nowrap;
 }
+
+/* 流れの再生 */
+.playback-layer * {
+  pointer-events: none;
+}
+.playback-actions select {
+  margin-left: auto;
+}
+.playback-info {
+  font-variant-numeric: tabular-nums;
+}
+.playback-warn {
+  color: #d32f2f;
+}
+.stocker-gauge .gauge-frame {
+  fill: none;
+  stroke: #1e88e5;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.stocker-gauge .gauge-fill {
+  fill: rgba(30, 136, 229, 0.45);
+}
+.stocker-gauge.filling .gauge-frame {
+  stroke-width: 3.5;
+}
+.stocker-gauge.full .gauge-frame {
+  stroke: #d32f2f;
+  stroke-width: 3.5;
+}
+.stocker-gauge.full .gauge-fill {
+  fill: rgba(211, 47, 47, 0.45);
+}
+.gauge-text,
+.held-text {
+  fill: var(--fg);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+  font-variant-numeric: tabular-nums;
+}
+.held-text {
+  fill: #d32f2f;
+}
+.flow-part {
+  fill: #ffb300;
+  stroke: #6d4c00;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.agv-home {
+  fill: none;
+  stroke: #2e7d32;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+.agv-dock {
+  stroke: #2e7d32;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.agv-body {
+  fill: #2e7d32;
+  stroke: #1b5e20;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.agv-nose {
+  fill: #c8e6c9;
+}
+.agv-cart {
+  fill: #7f8a99;
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
