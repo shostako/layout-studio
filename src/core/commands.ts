@@ -5,7 +5,7 @@ import { checkAisle, type Aisle } from './aisle'
 import { calibrate, checkBackground, type Background } from './background'
 import { checkLink, sameLink, type Link } from './flow'
 import { checkSite, type Site } from './site'
-import { NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type Rotation, type Scene } from './scene'
+import { DEFAULT_FLOW_SETTINGS, FLOW_LIMITS, NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type FlowSettings, type Rotation, type Scene } from './scene'
 import type { Point } from './viewport'
 
 export type Command =
@@ -26,6 +26,7 @@ export type Command =
   | { type: 'setAislePoints'; id: string; points: Point[] } // 通路の中心線の頂点を差し替える（頂点を動かす・足す・消す）。周回かどうかは変えない
   | { type: 'link'; links: Link[] } // 工程のつなぎを足す（from → to）。1 本でも断られたら、どれも足さない
   | { type: 'unlink'; links: Link[] } // 工程のつなぎを外す
+  | { type: 'setFlow'; changes: Partial<FlowSettings> } // 流れの再生の数値（サイクル・ストッカーの容量・AGV の速さ・入れ替えの時間）を変える。書いたものだけ変える
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
 
 // update で変えられる項目。書いたものだけ変える
@@ -73,6 +74,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return link(scene, cmd.links)
     case 'unlink':
       return unlink(scene, cmd.links)
+    case 'setFlow':
+      return setFlow(scene, cmd.changes)
     case 'loadScene':
       return loadScene(cmd.scene)
   }
@@ -324,6 +327,32 @@ function unlink(scene: Scene, links: Link[]): CommandResult {
   return { ok: true, scene: { ...scene, links: scene.links.filter((x) => !links.some((l) => sameLink(x, l))) } }
 }
 
+const FLOW_KEYS = Object.keys(FLOW_LIMITS) as (keyof FlowSettings)[]
+
+// 流れの再生の数値が範囲に入っているか。all なら 4 つすべてを求める（setFlow では書いたものだけ）
+function checkFlow(f: unknown, all: boolean): string | null {
+  if (typeof f !== 'object' || f === null) return '流れの再生の数値（flow）の形ではありません'
+  const r = f as Record<string, unknown>
+  for (const k of FLOW_KEYS) {
+    const v = r[k]
+    if (v === undefined && !all) continue
+    const { min, max, integer, label } = FLOW_LIMITS[k]
+    if (!(typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max && (!integer || Number.isInteger(v))))
+      return `${label}は ${min} 以上 ${max} 以下の${integer ? '整数' : '数'}にしてください`
+  }
+  return null
+}
+
+function setFlow(scene: Scene, changes: Partial<FlowSettings>): CommandResult {
+  const bad = checkFlow(changes, false)
+  if (bad) return fail(bad)
+  const c = changes as Record<string, unknown>
+  if (!FLOW_KEYS.some((k) => c[k] !== undefined)) return fail('変える数値がありません')
+  const flow = { ...scene.flow }
+  for (const k of FLOW_KEYS) if (c[k] !== undefined) flow[k] = c[k] as number
+  return { ok: true, scene: { ...scene, flow } }
+}
+
 // 空のシーンに背景・敷地・設備・通路・つなぎを 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
 // 知らない項目は落とす
 function loadScene(next: Scene): CommandResult {
@@ -356,5 +385,10 @@ function loadScene(next: Scene): CommandResult {
     r = link(r.scene, next.links)
     if (!r.ok) return r
   }
-  return r
+  // 流れの数値を書かなければ架空の目安（AI が数値を書かずにシーンを作れるように）
+  const f = next.flow === undefined ? DEFAULT_FLOW_SETTINGS : next.flow
+  const badF = checkFlow(f, true)
+  if (badF) return fail(badF)
+  const flow = Object.fromEntries(FLOW_KEYS.map((k) => [k, f[k]])) as FlowSettings
+  return { ok: true, scene: { ...r.scene, flow } }
 }

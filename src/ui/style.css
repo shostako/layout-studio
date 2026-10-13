@@ -379,6 +379,14 @@ body {
 .props input[type='number'] {
   font-variant-numeric: tabular-nums;
 }
+/* 流れの再生の数値は 2 列に並べる */
+.playback-params {
+  grid-template-columns: 1fr 1fr;
+}
+.playback-params label {
+  grid-template-columns: auto 1fr;
+  white-space: nowrap;
+}
 .aisle-body {
   fill: none;
   stroke: rgba(30, 136, 229, 0.22);

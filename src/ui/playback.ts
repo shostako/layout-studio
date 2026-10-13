@@ -1,19 +1,21 @@
 // 流れの再生: 左の欄の「流れの再生」で再生・一時停止・最初から・速さ。成形品の移動、ストッカーの溜まり具合、AGV を図面に重ねて描く。
 // 計算は src/core/playback.ts の純関数。再生の状態は画面の状態で、シーンにも履歴にも入れない。
-// シーンが変わったら（配置を変えた、案を切り替えた）、筋書きを作り直して最初から再生する。
+// サイクル・容量・AGV の速さ・入れ替えの時間はシーンの flow で、欄で変えると setFlow のコマンドを出す（元に戻せる、案ごとに保存）。
+// シーンが変わったら（配置や数値を変えた、案を切り替えた）、筋書きを作り直して最初から再生する。
 import type { Canvas } from './canvas'
 import type { Editor } from './editor'
 import {
-  DEFAULT_FLOW_PARAMS,
+  flowParams,
   flowView,
   formatClock,
   initialFlow,
   prepareFlow,
   stepFlow,
   type FlowModel,
+  type FlowParams,
   type FlowState,
 } from '../core/playback'
-import { footprint, type Scene } from '../core/scene'
+import { FLOW_LIMITS, footprint, type FlowSettings, type Scene } from '../core/scene'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 // 再生の速さ（実際の時間の何倍か）
@@ -37,8 +39,8 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
   const layer = svg('g', { class: 'playback-layer' })
   canvas.world.querySelector('.link-layer')!.after(layer)
 
-  const params = DEFAULT_FLOW_PARAMS
   let scene: Scene = editor.scene()
+  let params: FlowParams = flowParams(scene.flow)
   let model: FlowModel = prepareFlow(scene)
   let state: FlowState = initialFlow(model)
   let playing = false
@@ -77,16 +79,53 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
   info.className = 'info playback-info'
   const warn = document.createElement('div')
   warn.className = 'hint playback-warn'
+  // 数値の欄。画面では AGV の速さを m/秒で見せる（シーンは mm/秒）。確定（Enter か欄を離れたとき）で setFlow を 1 回出す
+  const FIELDS: { key: keyof FlowSettings; label: string; scale: number; step: number; title: string }[] = [
+    { key: 'cycleTime', label: 'サイクル 秒', scale: 1, step: 1, title: '成形のサイクル時間（秒）。成形機 1 台がこの時間ごとに 1 個つくる' },
+    { key: 'stockerCapacity', label: '容量 個', scale: 1, step: 1, title: 'ストッカー 1 台に入る数。この数で満杯になり AGV を呼ぶ' },
+    { key: 'agvSpeed', label: 'AGV m/秒', scale: 1000, step: 0.1, title: 'AGV が通路を走る速さ（m/秒）' },
+    { key: 'agvHandlingTime', label: '入れ替え 秒', scale: 1, step: 5, title: 'AGV がストッカーで満杯の台車を空の台車と替える時間（秒）' },
+  ]
+  const props = document.createElement('div')
+  props.className = 'props playback-params'
+  const inputs = new Map<keyof FlowSettings, HTMLInputElement>()
+  for (const f of FIELDS) {
+    const lim = FLOW_LIMITS[f.key]
+    const i = document.createElement('input')
+    i.type = 'number'
+    i.min = String(lim.min / f.scale)
+    i.max = String(lim.max / f.scale)
+    i.step = String(f.step)
+    i.title = `${f.title}。${lim.min / f.scale}〜${lim.max / f.scale}`
+    i.addEventListener('change', () => {
+      const v = Number(i.value)
+      // 空や範囲外はコマンドが断る。断られたら元の値に戻す
+      if (i.value === '' || !editor.run({ type: 'setFlow', changes: { [f.key]: Math.round(v * f.scale * 1e6) / 1e6 } }))
+        i.value = String(scene.flow[f.key] / f.scale)
+    })
+    i.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') i.blur()
+    })
+    const l = document.createElement('label')
+    l.title = i.title
+    l.append(f.label, i)
+    props.append(l)
+    inputs.set(f.key, i)
+  }
+  const showParams = () => {
+    for (const f of FIELDS) {
+      const i = inputs.get(f.key)!
+      if (document.activeElement !== i) i.value = String(scene.flow[f.key] / f.scale)
+    }
+  }
   const note = document.createElement('div')
   note.className = 'hint'
-  note.textContent =
-    `サイクル ${params.cycleTime} 秒、ストッカー ${params.stockerCapacity} 個で満杯、AGV ${params.agvSpeed / 1000} m/秒・台車の入れ替え ${params.agvHandlingTime} 秒（架空の目安）。` +
-    'AGV は最初に描いた通路の始点から出入りする'
+  note.textContent = '数値は案ごとに保存し、元に戻せる。変えると最初から再生する。AGV は最初に描いた通路の始点から出入りする'
 
   // 工程のつなぎの欄の下に置く
   const flowHint = canvas.side.querySelector('.link-actions')?.nextElementSibling
-  if (flowHint) flowHint.after(h, actions, info, warn, note)
-  else canvas.side.append(h, actions, info, warn, note)
+  if (flowHint) flowHint.after(h, actions, props, info, warn, note)
+  else canvas.side.append(h, actions, props, info, warn, note)
 
   // ---- 再生 ----
   const tick = (now: number) => {
@@ -118,8 +157,10 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     const s = editor.scene()
     if (s === scene) return
     scene = s
+    params = flowParams(scene.flow)
     model = prepareFlow(scene)
     state = initialFlow(model)
+    showParams()
     paint()
   }
   editor.onRender(sync)
@@ -241,5 +282,6 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     else play()
   })
 
+  showParams()
   paint()
 }

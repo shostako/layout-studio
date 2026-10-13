@@ -1,9 +1,9 @@
 // シーンの JSON ファイル: 書き出しと、読み込み（古い版の変換と中身の確かめ）。DOM に触らない。
-// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles・links）。形を変えるときは SCENE_VERSION を上げ、
+// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles・links・flow）。形を変えるときは SCENE_VERSION を上げ、
 // MIGRATIONS に 1 つ前の版から変換する関数を足す。
 
 import { applyCommand } from './commands'
-import { SCENE_VERSION, createEmptyScene, type Scene } from './scene'
+import { DEFAULT_FLOW_SETTINGS, SCENE_VERSION, createEmptyScene, type Scene } from './scene'
 import type { Plan, PlanSet } from './plans'
 
 export type ParseResult = { ok: true; scene: Scene } | { ok: false; error: string }
@@ -25,6 +25,8 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
   }),
   // 版 5 で工程のつなぎを足した。版 4 には無いので空
   4: (d) => ({ ...d, links: [] }),
+  // 版 6 で流れの再生の数値を足した。版 5 は架空の目安（それまで固定だった値）で読む
+  5: (d) => ({ ...d, flow: { ...DEFAULT_FLOW_SETTINGS } }),
 }
 
 export function serializeScene(scene: Scene): string {

@@ -14,27 +14,24 @@
 
 import { linkSegment } from './flow'
 import { buildRouteNet, pathLength, pointAlong, shortestPath } from './route'
-import type { Scene } from './scene'
+import { DEFAULT_FLOW_SETTINGS, type FlowSettings, type Scene } from './scene'
 import type { Point } from './viewport'
 
 export const STOCKER_KIND = 'cart-stocker'
 
-export type FlowParams = {
-  cycleTime: number // 成形のサイクル時間（秒）
-  stockerCapacity: number // ストッカー 1 台に入る数
-  agvSpeed: number // AGV の速さ（mm/秒）
-  agvHandlingTime: number // AGV がストッカーで台車を替える時間（秒）
+// サイクル・容量・AGV の速さと入れ替えの時間はシーンの flow（案ごとに画面で変える）。移る速さは見せ方の値で固定
+export type FlowParams = FlowSettings & {
   transferSpeed: number // 成形品が設備から設備へ移る速さ（mm/秒）
 }
 
-// 最初の値は架空の目安。数値を画面で変えるのは次の項目
-export const DEFAULT_FLOW_PARAMS: FlowParams = {
-  cycleTime: 30,
-  stockerCapacity: 20,
-  agvSpeed: 1000,
-  agvHandlingTime: 30,
-  transferSpeed: 500,
+// 成形品が移る速さ（架空の目安）
+export const TRANSFER_SPEED = 500
+
+export function flowParams(settings: FlowSettings): FlowParams {
+  return { ...settings, transferSpeed: TRANSFER_SPEED }
 }
+
+export const DEFAULT_FLOW_PARAMS: FlowParams = flowParams(DEFAULT_FLOW_SETTINGS)
 
 export type FlowModel = {
   sources: string[] // 成形品が生まれる設備
