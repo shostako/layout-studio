@@ -3,6 +3,7 @@ import { mountAisles } from './ui/aisle'
 import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
 import { mountEditor } from './ui/editor'
+import { mountPlans } from './ui/plans'
 import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
 
@@ -13,5 +14,6 @@ if (app) {
   mountBackground(canvas, editor)
   mountSite(canvas, editor)
   mountAisles(canvas, editor)
-  mountStorage(canvas, editor)
+  const plans = mountPlans(canvas, editor)
+  mountStorage(canvas, editor, plans)
 }

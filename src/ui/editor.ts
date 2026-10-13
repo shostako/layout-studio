@@ -38,6 +38,11 @@ export type Editor = {
   onRender(listener: () => void): void
   // 履歴を捨てて、このシーンから始め直す（起動時に自動保存から戻すときだけ使う。ふだんの操作は run を通す）
   reset(scene: Scene): void
+  // 履歴をまるごと読む・差し替える（案の切り替えで、案ごとの元に戻すを持ち回る）。差し替えると選択と操作の途中は捨てる
+  history(): History
+  restore(history: History): void
+  // reset・restore で履歴を差し替えたときに呼ぶ（通路の選択を外すなど）
+  onReset(listener: () => void): void
   // 今のスナップの間隔（mm、0 はスナップしない）。敷地の頂点を拾うときにも使う
   snapStep(): number
   // 選択中の設備の id
@@ -745,6 +750,16 @@ export function mountEditor(canvas: Canvas): Editor {
     e.preventDefault()
   })
 
+  const resetListeners: (() => void)[] = []
+  const restore = (next: History) => {
+    setMode({ type: 'idle' })
+    history = next
+    selected = []
+    message = ''
+    for (const f of resetListeners) f()
+    render()
+  }
+
   render()
   return {
     run,
@@ -760,13 +775,10 @@ export function mountEditor(canvas: Canvas): Editor {
     },
     render,
     onRender: (f) => listeners.push(f),
-    reset: (next) => {
-      setMode({ type: 'idle' })
-      history = createHistory(next)
-      selected = []
-      message = ''
-      render()
-    },
+    reset: (next) => restore(createHistory(next)),
+    history: () => history,
+    restore,
+    onReset: (f) => resetListeners.push(f),
     snapStep: () => snap,
     selection: () => liveSelection(),
     select: (ids) => {

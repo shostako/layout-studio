@@ -542,3 +542,41 @@ body {
 .aisle-panel .hint[hidden] {
   display: none;
 }
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.side .plan-list .plan {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side .plan-list .plan.active {
+  border-color: var(--axes);
+  box-shadow: inset 3px 0 0 var(--axes);
+  font-weight: 600;
+  cursor: default;
+}
+.plan-name {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0 4px;
+}
+.plan-name input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+}
+.plan-panel .actions {
+  display: flex;
+  gap: 4px;
+}
+.plan-panel .hint.warn {
+  color: #d32f2f;
+}
+.plan-panel .hint:empty {
+  display: none;
+}

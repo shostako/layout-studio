@@ -4,6 +4,7 @@
 
 import { applyCommand } from './commands'
 import { SCENE_VERSION, createEmptyScene, type Scene } from './scene'
+import type { Plan, PlanSet } from './plans'
 
 export type ParseResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
@@ -57,6 +58,11 @@ export function parseScene(text: string): ParseResult {
   } catch {
     return { ok: false, error: 'JSON として読めませんでした' }
   }
+  return parseSceneData(data)
+}
+
+// JSON.parse した後のシーンを読む（版を上げて、中身を確かめる）
+function parseSceneData(data: unknown): ParseResult {
   const m = migrate(data)
   if (!m.ok) return m
   // 中身の確かめは、シーンを差し替えるコマンドと同じものを使う
@@ -68,4 +74,54 @@ export function parseScene(text: string): ParseResult {
 export function sceneFileName(now: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `layout-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}.json`
+}
+
+// ---- 案の束のファイル ----
+// 案を複数入れたファイルは { format: PLAN_FILE_FORMAT, version, active, plans: [{ id, name, scene }] }。
+// scene はシーンのファイルと同じ形（自分の version を持つ）で、読むときはシーンのファイルと同じ変換と確かめを通す。
+// 束の形を変えるときは PLAN_FILE_VERSION を上げる。
+export const PLAN_FILE_FORMAT = 'layout-studio/plans'
+export const PLAN_FILE_VERSION = 1
+
+export type PlanFileResult = { ok: true; plans: Plan[]; active: string } | { ok: false; error: string }
+
+export function serializePlanSet(set: PlanSet): string {
+  const data = { format: PLAN_FILE_FORMAT, version: PLAN_FILE_VERSION, active: set.active, plans: set.plans }
+  return JSON.stringify(data, null, 2) + '\n'
+}
+
+// 案の束のファイルを読む。シーン 1 つだけのファイル（案の束より前の形）は、name の案 1 つとして読む
+export function parsePlanFile(text: string, name: string): PlanFileResult {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return { ok: false, error: 'JSON として読めませんでした' }
+  }
+  const d = data as Record<string, unknown> | null
+  if (typeof d !== 'object' || d === null || Array.isArray(d) || d.format !== PLAN_FILE_FORMAT) {
+    const r = parseSceneData(data)
+    return r.ok ? { ok: true, plans: [{ id: 'plan-1', name, scene: r.scene }], active: 'plan-1' } : r
+  }
+  const v = d.version
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return { ok: false, error: 'ファイルに版（version）がありません' }
+  if (v > PLAN_FILE_VERSION)
+    return { ok: false, error: `新しい版（${v}）のファイルです。アプリを新しくしてください（読めるのは版 ${PLAN_FILE_VERSION} まで）` }
+  if (!Array.isArray(d.plans) || d.plans.length === 0) return { ok: false, error: '案の一覧（plans）がありません' }
+  const plans: Plan[] = []
+  for (const [i, p] of (d.plans as unknown[]).entries()) {
+    const where = `${i + 1} 番目の案`
+    if (typeof p !== 'object' || p === null) return { ok: false, error: `${where}が案の形ではありません` }
+    const { id, name: n, scene } = p as Record<string, unknown>
+    if (typeof id !== 'string' || !id) return { ok: false, error: `${where}の id がありません` }
+    if (plans.some((q) => q.id === id)) return { ok: false, error: `案の id が重複しています: ${id}` }
+    if (typeof n !== 'string' || !n.trim()) return { ok: false, error: `${where}の名前がありません` }
+    if (plans.some((q) => q.name === n.trim())) return { ok: false, error: `同じ名前の案があります: ${n.trim()}` }
+    const r = parseSceneData(scene)
+    if (!r.ok) return { ok: false, error: `案「${n.trim()}」: ${r.error}` }
+    plans.push({ id, name: n.trim(), scene: r.scene })
+  }
+  // 開いていた案が見つからなければ先頭を開く
+  const active = typeof d.active === 'string' && plans.some((p) => p.id === d.active) ? d.active : plans[0]!.id
+  return { ok: true, plans, active }
 }
