@@ -813,3 +813,7 @@ body {
 .ai-steps:empty {
   display: none;
 }
+.ai-panel textarea[readonly] {
+  font: 11px/1.4 ui-monospace, monospace;
+  white-space: pre;
+}

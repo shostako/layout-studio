@@ -2,9 +2,11 @@
 // 確かめと直しは src/core/ai.ts の純関数。当てるのは batch コマンドで、元に戻す 1 回で全部戻る。
 // いまは本物の AI ではなく、決まった応答を返す差し替え部品（src/core/aiStub.ts）を使う。外へは何も送らない。
 // 応答の JSON を手で貼って試すこともできる（ほかの AI のチャットで作った応答を確かめるなど）。
+// 「AI に渡す説明」は、今のシーンの要約と指示の書き方の文（src/core/aiPrompt.ts）。コピーしてほかの AI のチャットに貼れる。
 import type { Canvas } from './canvas'
 import type { Editor } from './editor'
 import { parseAiReply, planAiCommands, type AiPlan, type AiReply } from '../core/ai'
+import { buildAiPrompt } from '../core/aiPrompt'
 import { STUB_EXAMPLES, createStubClient, type AiClient } from '../core/aiStub'
 import type { Scene } from '../core/scene'
 
@@ -44,6 +46,24 @@ export function mountAi(canvas: Canvas, editor: Editor, client: AiClient = creat
   sendRow.className = 'actions'
   sendRow.append(sendBtn)
 
+  // AI に渡す説明（今のシーンの要約と指示の書き方）。頼みの欄の文も末尾に入れる
+  const prompt = document.createElement('details')
+  const promptSummary = document.createElement('summary')
+  promptSummary.textContent = 'AI に渡す説明（コピーしてほかの AI に貼る）'
+  const promptArea = document.createElement('textarea')
+  promptArea.rows = 6
+  promptArea.readOnly = true
+  const copyBtn = document.createElement('button')
+  copyBtn.type = 'button'
+  copyBtn.textContent = '説明をコピー'
+  copyBtn.title = '今のシーンの要約・指示の書き方・頼みの欄の文をコピーする。応答は下の「応答の JSON を貼って確かめる」へ'
+  const copied = document.createElement('span')
+  copied.className = 'hint'
+  const promptRow = document.createElement('div')
+  promptRow.className = 'actions'
+  promptRow.append(copyBtn, copied)
+  prompt.append(promptSummary, promptArea, promptRow)
+
   // 応答の JSON を手で貼る
   const paste = document.createElement('details')
   const pasteSummary = document.createElement('summary')
@@ -82,7 +102,7 @@ export function mountAi(canvas: Canvas, editor: Editor, client: AiClient = creat
   done.className = 'hint'
   result.append(answer, steps, error, applyRow, done)
 
-  panel.append(note, examples, request, sendRow, paste, result)
+  panel.append(note, examples, request, sendRow, prompt, paste, result)
   canvas.side.append(h, panel)
 
   // 届いた応答。シーンが変わるたびに今のシーンで確かめ直す（id の振り方や、指示の相手が消えたかが変わるため）
@@ -160,6 +180,30 @@ export function mountAi(canvas: Canvas, editor: Editor, client: AiClient = creat
     draw()
   }
 
+  // 説明の文は開いている間だけ作る（シーンや頼みが変わるたびに作り直す）
+  const refreshPrompt = () => {
+    if (prompt.open) promptArea.value = buildAiPrompt(editor.scene(), request.value)
+  }
+  prompt.addEventListener('toggle', () => {
+    copied.textContent = ''
+    refreshPrompt()
+  })
+  request.addEventListener('input', refreshPrompt)
+  copyBtn.addEventListener('click', async () => {
+    const text = buildAiPrompt(editor.scene(), request.value)
+    promptArea.value = text
+    try {
+      await navigator.clipboard.writeText(text)
+      copied.textContent = 'コピーしました'
+    } catch {
+      // クリップボードが使えないときは、欄を選んで手でコピーしてもらう
+      prompt.open = true
+      promptArea.focus()
+      promptArea.select()
+      copied.textContent = 'コピーできませんでした。欄を選んだので Ctrl+C でコピーしてください'
+    }
+  })
+
   sendBtn.addEventListener('click', () => void send())
   request.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -185,8 +229,13 @@ export function mountAi(canvas: Canvas, editor: Editor, client: AiClient = creat
     done.textContent = `${n} 個の指示を当てました。元に戻す（Ctrl+Z）1 回で全部戻ります。`
   })
 
+  let prompted: Scene | null = null
   editor.onRender(() => {
     if (reply && planned !== editor.scene()) draw()
+    if (prompted !== editor.scene()) {
+      prompted = editor.scene()
+      refreshPrompt()
+    }
   })
   draw()
 }
