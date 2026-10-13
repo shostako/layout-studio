@@ -430,3 +430,43 @@ body {
 .aisle-panel .info[hidden] {
   display: none;
 }
+.equipment.overlap rect {
+  stroke: #d32f2f;
+  stroke-width: 3;
+}
+.equipment.overlap.outside rect {
+  stroke-dasharray: 8 4;
+}
+.equipment.overlap.selected rect {
+  stroke-width: 4;
+  stroke-dasharray: none;
+}
+.overlap-layer {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.overlap-layer rect,
+.overlap-layer polygon {
+  fill: #d32f2f;
+}
+.overlap-list {
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.overlap-list li {
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.overlap-list li:hover {
+  background: rgba(211, 47, 47, 0.1);
+}
+.overlap-list li.more {
+  cursor: default;
+  color: var(--muted);
+}
+.overlap-list li.more:hover {
+  background: none;
+}
