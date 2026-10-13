@@ -580,3 +580,72 @@ body {
 .plan-panel .hint:empty {
   display: none;
 }
+.compare-panel {
+  grid-area: canvas;
+  align-self: start;
+  justify-self: end;
+  z-index: 2;
+  margin: 8px;
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: 6px 8px;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 12px;
+}
+.compare-panel[hidden] {
+  display: none;
+}
+.compare-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.compare-head button {
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.compare-panel table {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.compare-panel th,
+.compare-panel td {
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.compare-panel th {
+  color: var(--muted);
+  font-weight: normal;
+}
+.compare-panel .num {
+  text-align: right;
+}
+.compare-panel td.best {
+  font-weight: bold;
+}
+.compare-panel td.warn {
+  color: #d32f2f;
+}
+.compare-panel tr.active td {
+  background: rgba(30, 136, 229, 0.12);
+}
+.compare-panel tbody tr,
+.compare-panel tr:not(:first-child) {
+  cursor: pointer;
+}
+.compare-panel .hint {
+  max-width: 40em;
+  margin-top: 6px;
+  white-space: normal;
+}

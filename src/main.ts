@@ -2,6 +2,7 @@ import './ui/style.css'
 import { mountAisles } from './ui/aisle'
 import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
+import { mountCompare } from './ui/compare'
 import { mountEditor } from './ui/editor'
 import { mountPlans } from './ui/plans'
 import { mountSite } from './ui/site'
@@ -16,4 +17,5 @@ if (app) {
   mountAisles(canvas, editor)
   const plans = mountPlans(canvas, editor)
   mountStorage(canvas, editor, plans)
+  mountCompare(canvas, editor, plans)
 }
