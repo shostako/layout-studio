@@ -11,7 +11,8 @@ import { mountPlans } from './ui/plans'
 import { mountPlayback } from './ui/playback'
 import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
-import { applySavedTheme, mountTheme } from './ui/theme'
+import { mountExportImage } from './ui/exportImage'
+import { applySavedTheme, mountMonochrome, mountTheme } from './ui/theme'
 import { mountTouch } from './ui/touch'
 
 applySavedTheme()
@@ -33,4 +34,6 @@ if (app) {
   // 道具バーの先頭に「パネル」を置くので、道具バーに足す部品の後に組む
   mountTouch(canvas, editor)
   mountTheme(canvas)
+  mountMonochrome(canvas)
+  mountExportImage(canvas, editor, plans)
 }

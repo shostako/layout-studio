@@ -43,7 +43,7 @@ export function rectUnionArea(rects: readonly Rect[]): number {
   return area
 }
 
-function boundsOf(rects: readonly Rect[]): Rect | null {
+export function boundsOf(rects: readonly Rect[]): Rect | null {
   if (rects.length === 0) return null
   const x = Math.min(...rects.map((r) => r.x))
   const y = Math.min(...rects.map((r) => r.y))
@@ -53,7 +53,7 @@ function boundsOf(rects: readonly Rect[]): Rect | null {
 }
 
 // 通路の帯（画面に描いている形、角の埋めも含む）を囲む長方形
-function aisleBounds(scene: Scene): Rect[] {
+export function aisleBounds(scene: Scene): Rect[] {
   return scene.aisles.flatMap((a) => {
     const pts = aislePieces(a).flat()
     if (pts.length === 0) return []

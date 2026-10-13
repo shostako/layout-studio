@@ -8,6 +8,11 @@
   --grid-major: #d2d0c9;
   --axes: #d2691e;
   --link: #37474f;
+  /* 白黒の表示の紙と線の色（ダークでも変えない） */
+  --paper: #fff;
+  --ink: #222;
+  --ink-light: #888;
+  --ink-band: #dcdcdc;
   color-scheme: light;
 }
 /* 色の見え方は、道具バーの「表示」で自動（OS の設定に従う）・ライト・ダークを選ぶ（src/ui/theme.ts が html に data-theme を付ける）。
@@ -962,4 +967,64 @@ body {
 /* 例の選び欄は、長い名前で道具バーを押し広げないよう幅を抑える */
 .toolbar select.examples {
   max-width: 8em;
+}
+
+/* ---- 白黒の表示（道具バーの「白黒」。src/ui/theme.ts が .canvas-root に mono を付ける。画像の書き出しも同じ印で白黒にする） ----
+   設備は白地に黒い線と黒い文字、通路は薄い灰色の帯と黒い中心線、背景の図面は灰色にする。
+   選択の印と注意（重なり・はみ出し）の色は残す。正式な図面に合わせ、ダークの見え方でも紙の色（--paper・--ink）で描く */
+.mono .equipment rect {
+  fill: var(--paper);
+  fill-opacity: 1;
+  stroke: var(--ink);
+}
+.mono .equipment .front {
+  stroke: var(--ink);
+  stroke-opacity: 0.5;
+}
+.mono .equipment text {
+  fill: var(--ink);
+  stroke: none;
+}
+.mono .equipment.selected rect {
+  stroke: var(--axes);
+}
+.mono .equipment.in-clearance rect {
+  stroke: #ef6c00;
+}
+/* 重なり・はみ出しの赤は、余白への入り込みの橙より後に置いて勝たせる（色つきの表示と同じ優先） */
+.mono .equipment.overlap rect,
+.mono .equipment.outside rect {
+  stroke: #d32f2f;
+}
+.mono .clearance-zone {
+  fill: none;
+  stroke: var(--ink-light);
+}
+.mono .site {
+  fill: none;
+  stroke: var(--ink);
+}
+.mono .aisle-body {
+  stroke: var(--ink-band);
+}
+.mono .aisle-center,
+.mono .aisle-arrow {
+  stroke: var(--ink);
+}
+.mono .aisle.selected .aisle-center,
+.mono .aisle.selected .aisle-arrow {
+  stroke: var(--axes);
+}
+.mono .link-line {
+  stroke: var(--ink);
+}
+.mono .link-head {
+  fill: var(--ink);
+}
+.mono .background {
+  filter: grayscale(1);
+}
+
+.toolbar button.active {
+  outline: 2px solid var(--axes);
 }
