@@ -1,9 +1,22 @@
 // AGV の通路: クリックで中心線のポリラインを描く、選ぶ、名前・幅を変える、消す。
-// シーンの変更は editor.run（コマンド）を通す。描いている途中の頂点と、通路の選択は画面の状態で、シーンには入れない。
+// 選んだ通路の頂点を動かす・足す・消す、通路ごと動かす（ドラッグと矢印キー）。
+// シーンの変更は editor.run（コマンド）を通す。描いている途中の頂点と、通路・頂点の選択は画面の状態で、シーンには入れない。
 import type { Canvas } from './canvas'
-import type { Editor, Tool } from './editor'
-import { DEFAULT_AISLE_WIDTH, aisleHitTest, aisleLength, nextAisleId, nextAisleName, type Aisle } from '../core/aisle'
-import { snapValue } from '../core/placement'
+import type { Editor, Grab, Tool } from './editor'
+import {
+  DEFAULT_AISLE_WIDTH,
+  aisleHitTest,
+  aisleLength,
+  aisleMidpoints,
+  aisleVertexAt,
+  insertAisleVertex,
+  moveAisleVertex,
+  nextAisleId,
+  nextAisleName,
+  removeAisleVertex,
+  type Aisle,
+} from '../core/aisle'
+import { hitTest, snapValue } from '../core/placement'
 import type { Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -12,6 +25,12 @@ const CLOSE_PX = 8
 const MARK_PX = 4
 // 細い通路でもクリックで選べるよう、幅の外にこの px の余裕を持たせる
 const HIT_SLACK_PX = 4
+// 選んだ通路の頂点と、線分の中点（頂点を足すつまみ）の大きさと、つかめる範囲（px）
+const HANDLE_PX = 10
+const MID_PX = 7
+const GRAB_PX = 7
+// スナップしないときの矢印キー 1 回の移動量
+const NUDGE_NO_SNAP = 10
 
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
   const el = document.createElementNS(SVG_NS, tag)
@@ -37,11 +56,25 @@ function drawAisle(a: Pick<Aisle, 'points' | 'width' | 'closed'>, cls: string): 
   return g
 }
 
+// 画面の上で決まった大きさの点（拡大縮小しても px が変わらない）。長さ 0 の線を太い線端で描く。縁取りと中の 2 重
+function handle(p: Point, px: number, cls: string, square: boolean): SVGGElement {
+  const cap = square ? 'square' : 'round'
+  const d = `M${p.x} ${p.y}h0`
+  const g = svg('g', { class: cls })
+  g.append(svg('path', { class: 'edge', d, 'stroke-width': px, 'stroke-linecap': cap }), svg('path', { class: 'core', d, 'stroke-width': px - 4, 'stroke-linecap': cap }))
+  return g
+}
+
 export function mountAisles(canvas: Canvas, editor: Editor): void {
   // 敷地より上、設備より下に描く
   const layer = svg('g', { class: 'aisle-layer' })
   canvas.world.insertBefore(layer, canvas.world.querySelector('.equipment-layer'))
+  // 選んだ通路の頂点のつまみ。設備に隠れないよう、いちばん上に描く
+  const handleLayer = svg('g', { class: 'aisle-handle-layer' })
+  canvas.world.append(handleLayer)
   let selected: string[] = []
+  // 選んだ通路の中で選んでいる頂点（Delete で消す）
+  let vertex: number | null = null
 
   // ---- 左の欄 ----
   const h = document.createElement('h2')
@@ -92,7 +125,11 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
   hint.className = 'hint'
   const selInfo = document.createElement('div')
   selInfo.className = 'info'
-  box.append(info, drawForm, selInfo, props, row, hint)
+  const editHint = document.createElement('div')
+  editHint.className = 'hint'
+  editHint.textContent =
+    '頂点をドラッグで動かす。辺の中点をドラッグかクリックで頂点を足す。頂点をクリックして Delete で消す。帯のドラッグか矢印キーで通路ごと動かす'
+  box.append(info, drawForm, selInfo, props, row, editHint, hint)
 
   // 敷地の欄の下、ひな形の上に置く
   const templatesHeading = canvas.side.querySelector('h2 + .templates')?.previousElementSibling
@@ -103,6 +140,7 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
   const liveSelection = () => selected.filter((id) => editor.scene().aisles.some((a) => a.id === id))
   const select = (ids: string[]) => {
     selected = ids
+    vertex = null
     editor.render()
   }
 
@@ -124,6 +162,17 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     const ids = liveSelection()
     if (ids.length && editor.run({ type: 'removeAisle', ids })) select([])
   }
+  // 選んでいる頂点を消す。頂点が足りなくなるときはコマンドが断り、理由が下の欄に出る
+  const removeVertex = () => {
+    const a = selectedAisle()
+    if (!a || vertex === null) return
+    if (editor.run({ type: 'setAislePoints', id: a.id, points: removeAisleVertex(a.points, vertex) })) vertex = null
+    editor.render()
+  }
+  const selectedAisle = (): Aisle | undefined => {
+    const ids = liveSelection()
+    return ids.length === 1 ? editor.scene().aisles.find((a) => a.id === ids[0]) : undefined
+  }
   delBtn.addEventListener('click', removeSelection)
 
   // ---- 選ぶ: 設備の無い所のクリックで、通路に当たれば選ぶ ----
@@ -132,6 +181,65 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     // 設備と通路は同時に選ばない
     if (hit) editor.select([])
     selected = hit ? [hit] : []
+    vertex = null
+  })
+
+  // ---- 頂点を動かす・足す、通路ごと動かす（ドラッグ） ----
+  const snapPoint = (p: Point) => {
+    const step = editor.snapStep()
+    return { x: snapValue(p.x, step), y: snapValue(p.y, step) }
+  }
+  // 頂点 i を動かす。Shift で前の頂点（先頭なら次の頂点）から水平・垂直に限る
+  const vertexGrab = (a: Aisle, i: number): Grab => {
+    const anchor = a.points[i - 1] ?? (a.closed ? a.points[a.points.length - 1] : a.points[1])
+    return {
+      move: (at, e) => ({ type: 'setAislePoints', id: a.id, points: moveAisleVertex(a.points, i, constrain(anchor, snapPoint(at), e.shiftKey)) }),
+      click: () => (vertex = i),
+      end: (ok) => {
+        if (ok) vertex = i
+      },
+    }
+  }
+  // 線分 seg の中点をつかんで、頂点を足しながら動かす。動かさずに離したら中点に足す
+  const insertGrab = (a: Aisle, seg: number, mid: Point): Grab => ({
+    move: (at, e) => ({ type: 'setAislePoints', id: a.id, points: insertAisleVertex(a.points, seg, constrain(a.points[seg], snapPoint(at), e.shiftKey)) }),
+    click: () => {
+      if (editor.run({ type: 'setAislePoints', id: a.id, points: insertAisleVertex(a.points, seg, mid) })) vertex = seg + 1
+    },
+    end: (ok) => {
+      if (ok) vertex = seg + 1
+    },
+  })
+  // 通路ごと動かす。最初の頂点がスナップの間隔に乗るように動かす
+  const moveGrab = (a: Aisle, start: Point): Grab => {
+    const p0 = a.points[0]!
+    return {
+      move: (at) => {
+        const to = snapPoint({ x: p0.x + at.x - start.x, y: p0.y + at.y - start.y })
+        return { type: 'moveAisle', ids: [a.id], dx: to.x - p0.x, dy: to.y - p0.y }
+      },
+    }
+  }
+  editor.onGrab((at, e) => {
+    const s = scale()
+    const a = selectedAisle()
+    if (a && !e.shiftKey) {
+      const i = aisleVertexAt(a, at, GRAB_PX / s)
+      if (i !== null) return vertexGrab(a, i)
+      const mids = aisleMidpoints(a)
+      const seg = aisleVertexAt({ ...a, points: mids }, at, GRAB_PX / s)
+      if (seg !== null) return insertGrab(a, seg, mids[seg]!)
+    }
+    // 設備が上にあれば設備を先に当てる。Shift は設備の選び足しに使うので引き受けない
+    const scene = editor.scene()
+    if (e.shiftKey || hitTest(scene, at)) return null
+    const hit = aisleHitTest(scene, at, HIT_SLACK_PX / s)
+    const target = scene.aisles.find((x) => x.id === hit)
+    if (!target) return null
+    editor.select([])
+    if (!selected.includes(target.id)) select([target.id])
+    else vertex = null
+    return moveGrab(target, at)
   })
 
   // ---- 通路を描く道具 ----
@@ -240,9 +348,20 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
       return
     }
     if (isInteractive(e.target) || e.ctrlKey || e.metaKey || e.altKey || liveSelection().length === 0) return
-    if (e.key === 'Delete' || e.key === 'Backspace') removeSelection()
-    else if (e.key === 'Escape') select([])
-    else return
+    const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+    const arrow = arrows[e.key]
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (vertex !== null) removeVertex()
+      else removeSelection()
+    } else if (e.key === 'Escape') {
+      if (vertex !== null) {
+        vertex = null
+        editor.render()
+      } else select([])
+    } else if (arrow) {
+      const step = editor.snapStep() > 0 ? editor.snapStep() : NUDGE_NO_SNAP
+      editor.run({ type: 'moveAisle', ids: liveSelection(), dx: arrow[0] * step, dy: arrow[1] * step })
+    } else return
     e.preventDefault()
   })
   window.addEventListener('keyup', (e) => {
@@ -262,7 +381,19 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     if (editor.selection().length > 0) selected = []
     selected = liveSelection()
     const sel = new Set(selected)
-    layer.replaceChildren(...scene.aisles.map((a) => drawAisle(a, `aisle${sel.has(a.id) ? ' selected' : ''}`)))
+    // ドラッグ中は動かした先を描く
+    const shown = editor.shown()
+    layer.replaceChildren(...shown.aisles.map((a) => drawAisle(a, `aisle${sel.has(a.id) ? ' selected' : ''}`)))
+    const one = selected.length === 1 ? shown.aisles.find((a) => a.id === selected[0]) : undefined
+    if (!one || vertex === null || vertex >= one.points.length) vertex = null
+    handleLayer.replaceChildren(
+      ...(one && !drawing()
+        ? [
+            ...aisleMidpoints(one).map((p) => handle(p, MID_PX, 'aisle-handle mid', true)),
+            ...one.points.map((p, i) => handle(p, HANDLE_PX, `aisle-handle${i === vertex ? ' active' : ''}`, false)),
+          ]
+        : []),
+    )
 
     const total = scene.aisles.reduce((s, a) => s + aisleLength(a), 0)
     info.textContent = scene.aisles.length ? `${scene.aisles.length} 本　中心線の計 ${fmtM(total)}` : 'なし'
@@ -270,13 +401,16 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     props.hidden = items.length !== 1
     row.hidden = items.length === 0
     selInfo.hidden = items.length !== 1
+    editHint.hidden = items.length !== 1
     // 描いた直後の知らせは、通路の選択が外れたら消す
     if (items.length === 0 && hint.textContent?.includes('を描きました')) hint.textContent = ''
     const first = items[0]
     if (first) {
       if (document.activeElement !== nameInput) nameInput.value = first.name
       if (document.activeElement !== widthInput) widthInput.value = String(first.width)
-      selInfo.textContent = `選択中: ${first.name}（${first.closed ? '周回、' : ''}頂点 ${first.points.length}、長さ ${fmtM(aisleLength(first))}）`
+      selInfo.textContent =
+        `選択中: ${first.name}（${first.closed ? '周回、' : ''}頂点 ${first.points.length}、長さ ${fmtM(aisleLength(first))}）` +
+        (vertex !== null ? `　頂点 ${vertex + 1} を選択中（Delete で消す）` : '')
     }
   }
   editor.onRender(paint)

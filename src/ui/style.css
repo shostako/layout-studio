@@ -515,3 +515,30 @@ body {
   grid-template-columns: 1.2em 1fr;
   align-items: center;
 }
+.aisle-handle path {
+  vector-effect: non-scaling-stroke;
+}
+.aisle-handle {
+  cursor: move;
+}
+.aisle-handle .edge {
+  stroke: #1e88e5;
+}
+.aisle-handle .core {
+  stroke: #fff;
+}
+.aisle-handle.mid {
+  cursor: copy;
+}
+.aisle-handle.mid .core {
+  stroke: #e3f2fd;
+}
+.aisle-handle.active .edge {
+  stroke: #d32f2f;
+}
+.aisle-handle.active .core {
+  stroke: #d32f2f;
+}
+.aisle-panel .hint[hidden] {
+  display: none;
+}
