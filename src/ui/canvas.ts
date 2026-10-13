@@ -49,8 +49,9 @@ export type Canvas = {
   setHome(rect: Rect | null): void
   // 「全体」の範囲を画面に収める
   fitHome(): void
-  // この指（タッチの pointerId）のドラッグで画面を動かす。editor が、指を置いた所に動かすものが無いときに呼ぶ
-  beginPan(e: PointerEvent): void
+  // この指（タッチの pointerId）のドラッグで画面を動かす。from は指を置いた所（clientX, clientY）で、
+  // 次の指の動きから、置いた所からの動き全部を画面に移す。editor が、指が触って離すより大きく動いたときに呼ぶ
+  beginPan(pointerId: number, from: Point): void
   // 画面に触れている指の数
   touchCount(): number
   // 2 本目の指が触れて、拡大縮小と移動を始めたときに呼ぶ（editor が 1 本指の操作をやめる）
@@ -302,9 +303,8 @@ export function mountCanvas(root: HTMLElement): Canvas {
       return screenToWorld(view, { x: clientX - r.left, y: clientY - r.top })
     },
     isPanKeyDown: () => spaceDown,
-    beginPan: (e) => {
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY }
-      svgEl.setPointerCapture(e.pointerId)
+    beginPan: (pointerId, from) => {
+      drag = { id: pointerId, x: from.x, y: from.y }
     },
     touchCount: () => touches.size,
     onPinch: (f) => pinchListeners.push(f),

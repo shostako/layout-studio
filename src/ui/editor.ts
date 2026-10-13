@@ -607,9 +607,9 @@ export function mountEditor(canvas: Canvas): Editor {
   // 指で触る画面の決まり: 選んでいる設備・つかめる頂点は指で動かす。それ以外は、動かすと画面の移動、
   // 動かさずに離すとマウスのクリックと同じ（選ぶ・置く・道具の点を拾う）。2 本指は canvas の拡大縮小と移動
   const svgEl = canvas.svg
+  // 画面はまだ動かさない。触って離すつもりの指の揺れで図面がずれないよう、TOUCH_SLOP_PX を超えてから動かす
   const startTouchTap = (e: PointerEvent, tap: () => void) => {
     touchTap = { pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY }, moved: false, tap }
-    canvas.beginPan(e)
   }
   const onTouchDown = (e: PointerEvent, at: Point) => {
     if (mode.type === 'tool') {
@@ -750,6 +750,7 @@ export function mountEditor(canvas: Canvas): Editor {
     if (touchTap && e.pointerId === touchTap.pointerId) {
       if (!touchTap.moved && Math.hypot(e.clientX - touchTap.startClient.x, e.clientY - touchTap.startClient.y) > TOUCH_SLOP_PX) {
         touchTap.moved = true
+        canvas.beginPan(touchTap.pointerId, touchTap.startClient)
       }
       return
     }
