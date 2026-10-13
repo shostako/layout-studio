@@ -47,6 +47,19 @@ export type Editor = {
   // ふだんの操作で、設備の無い所を左クリックしたときに呼ぶ（通路を選ぶのに使う）。
   // 設備の選択は呼ぶ前に外している（Shift なしのとき）
   onEmptyClick(listener: (at: Point, e: PointerEvent) => void): void
+  // ふだんの操作で左ボタンを押したとき、設備の当たり判定より先に呼ぶ。Grab を返すと、そのドラッグを引き受ける（通路の頂点や通路ごとの移動）
+  onGrab(listener: (at: Point, e: PointerEvent) => Grab | null): void
+  // 今描いているシーン（ドラッグ中は、仮に当てたコマンドの結果）
+  shown(): Scene
+}
+
+// 他の部品が引き受けるドラッグ。動かすたびに仮のコマンドを返し、editor がそれを当てた結果を描く。離したときに 1 回だけ実行する。
+// 動かさずに離したら click を呼ぶ
+export type Grab = {
+  move(at: Point, e: PointerEvent): Command | null
+  click?(): void
+  // 離した後に呼ぶ。ok はコマンドが通ったか
+  end?(ok: boolean): void
 }
 
 type Mode =
@@ -64,6 +77,7 @@ type Mode =
       dy: number
       moved: boolean
     }
+  | { type: 'grab'; pointerId: number; startClient: Point; grab: Grab; cmd: Command | null; moved: boolean }
 
 const turn = (r: Rotation, q: number): Rotation => ((((r / 90 + q) % 4) + 4) % 4) * 90 as Rotation
 
@@ -93,6 +107,8 @@ export function mountEditor(canvas: Canvas): Editor {
   canvas.world.append(clearanceLayer, layer, clearanceHitLayer, overlapLayer, toolLayer)
   const listeners: (() => void)[] = []
   const emptyClickListeners: ((at: Point, e: PointerEvent) => void)[] = []
+  const grabListeners: ((at: Point, e: PointerEvent) => Grab | null)[] = []
+  let lastShown: Scene | null = null
 
   // 今の操作をやめて別の操作に移る。道具を使っていたら知らせる
   const setMode = (next: Mode) => {
@@ -386,7 +402,11 @@ export function mountEditor(canvas: Canvas): Editor {
     if (mode.type === 'dragging' && mode.moved) {
       const r = applyCommand(shown, { type: 'move', ids: mode.ids, dx: mode.dx, dy: mode.dy })
       if (r.ok) shown = r.scene
+    } else if (mode.type === 'grab' && mode.moved && mode.cmd) {
+      const r = applyCommand(shown, mode.cmd)
+      if (r.ok) shown = r.scene
     }
+    lastShown = shown
     selected = liveSelection()
     const sel = new Set(selected)
     // 敷地からはみ出した設備。ドラッグ中は動かした先で判定する
@@ -582,6 +602,14 @@ export function mountEditor(canvas: Canvas): Editor {
       render()
       return
     }
+    for (const f of grabListeners) {
+      const grab = f(at, e)
+      if (!grab) continue
+      mode = { type: 'grab', pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY }, grab, cmd: null, moved: false }
+      svgEl.setPointerCapture(e.pointerId)
+      render()
+      return
+    }
     const hit = hitTest(scene(), at)
     if (!hit) {
       if (!e.shiftKey) selected = []
@@ -625,12 +653,32 @@ export function mountEditor(canvas: Canvas): Editor {
       mode = { ...mode, dx: d.dx, dy: d.dy, moved: true }
       svgEl.classList.add('dragging')
       render()
+    } else if (mode.type === 'grab' && e.pointerId === mode.pointerId) {
+      const far = Math.hypot(e.clientX - mode.startClient.x, e.clientY - mode.startClient.y) > DRAG_THRESHOLD_PX
+      if (!mode.moved && !far) return
+      mode = { ...mode, cmd: mode.grab.move(at, e), moved: true }
+      svgEl.classList.add('dragging')
+      render()
     } else if (mode.type === 'placing' || mode.type === 'tool') {
       render()
     }
   })
 
   const endDrag = (e: PointerEvent, commit: boolean) => {
+    if (mode.type === 'grab' && e.pointerId === mode.pointerId) {
+      const m = mode
+      mode = { type: 'idle' }
+      svgEl.classList.remove('dragging')
+      if (commit && m.moved && m.cmd) {
+        const ok = run(m.cmd)
+        m.grab.end?.(ok)
+        if (ok) render()
+      } else {
+        if (commit && !m.moved) m.grab.click?.()
+        render()
+      }
+      return
+    }
     if (mode.type !== 'dragging' || e.pointerId !== mode.pointerId) return
     const m = mode
     mode = { type: 'idle' }
@@ -651,7 +699,7 @@ export function mountEditor(canvas: Canvas): Editor {
   const isInteractive = (t: EventTarget | null) =>
     t instanceof HTMLElement && (t.isContentEditable || t.closest('input, select, textarea') !== null)
   window.addEventListener('keydown', (e) => {
-    if (isInteractive(e.target) || mode.type === 'dragging') return
+    if (isInteractive(e.target) || mode.type === 'dragging' || mode.type === 'grab') return
     const mod = e.ctrlKey || e.metaKey
     if (mod && !e.altKey) {
       const k = e.key.toLowerCase()
@@ -726,5 +774,7 @@ export function mountEditor(canvas: Canvas): Editor {
       render()
     },
     onEmptyClick: (f) => emptyClickListeners.push(f),
+    onGrab: (f) => grabListeners.push(f),
+    shown: () => lastShown ?? scene(),
   }
 }

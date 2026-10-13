@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { aisleHitTest, aisleLength, checkAisle, distanceToSegment, nextAisleId, nextAisleName, type Aisle } from './aisle'
+import {
+  aisleHitTest,
+  aisleLength,
+  aisleMidpoints,
+  aisleVertexAt,
+  checkAisle,
+  distanceToSegment,
+  insertAisleVertex,
+  moveAisleVertex,
+  nextAisleId,
+  nextAisleName,
+  removeAisleVertex,
+  type Aisle,
+} from './aisle'
 import { applyCommand, type Command } from './commands'
 import { SCENE_VERSION, createEmptyScene, type Scene } from './scene'
 import { parseScene, serializeScene } from './sceneFile'
@@ -141,5 +154,51 @@ describe('ファイルの通路', () => {
     expect(r.ok).toBe(false)
     const r2 = parseScene(JSON.stringify({ ...createEmptyScene(), aisles: null }))
     expect(!r2.ok && r2.error).toMatch('aisles')
+  })
+})
+
+describe('頂点の編集', () => {
+  const ring = aisle('aisle-2', [[0, 0], [4000, 0], [4000, 3000]], { closed: true })
+
+  it('頂点を動かす・足す・消す（元の列は書き換えない）', () => {
+    const pts = ell.points
+    expect(moveAisleVertex(pts, 1, { x: 9000, y: 0 })).toEqual([{ x: 0, y: 0 }, { x: 9000, y: 0 }, { x: 10000, y: 5000 }])
+    expect(insertAisleVertex(pts, 0, { x: 5000, y: 0 })).toEqual([{ x: 0, y: 0 }, { x: 5000, y: 0 }, { x: 10000, y: 0 }, { x: 10000, y: 5000 }])
+    expect(removeAisleVertex(pts, 1)).toEqual([{ x: 0, y: 0 }, { x: 10000, y: 5000 }])
+    expect(pts[1]).toEqual({ x: 10000, y: 0 })
+  })
+
+  it('周回の閉じる辺に足すと、最後に入る', () => {
+    const mids = aisleMidpoints(ring)
+    expect(mids).toEqual([{ x: 2000, y: 0 }, { x: 4000, y: 1500 }, { x: 2000, y: 1500 }])
+    expect(insertAisleVertex(ring.points, 2, { x: 0, y: 3000 })).toEqual([{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 3000 }, { x: 0, y: 3000 }])
+  })
+
+  it('近い頂点を返す', () => {
+    expect(aisleVertexAt(ell, { x: 9900, y: 50 }, 200)).toBe(1)
+    expect(aisleVertexAt(ell, { x: 5000, y: 0 }, 200)).toBeNull()
+  })
+
+  it('setAislePoints は差し替えて確かめ直す。周回と名前・幅は変えない', () => {
+    const s = ok(createEmptyScene(), { type: 'addAisle', aisle: ring })
+    const s2 = ok(s, { type: 'setAislePoints', id: 'aisle-2', points: insertAisleVertex(ring.points, 2, { x: 0, y: 3000 }) })
+    expect(s2.aisles[0]).toMatchObject({ closed: true, width: 1500, name: 'aisle-2' })
+    expect(s2.aisles[0]!.points).toHaveLength(4)
+    // 周回は 3 つ以上
+    expect(err(s, { type: 'setAislePoints', id: 'aisle-2', points: removeAisleVertex(ring.points, 0) })).toMatch('3 つ以上')
+    // 隣の頂点に重ねると断る
+    expect(err(s, { type: 'setAislePoints', id: 'aisle-2', points: moveAisleVertex(ring.points, 1, { x: 0, y: 0 }) })).toMatch('同じ点')
+    expect(err(s, { type: 'setAislePoints', id: 'nope', points: ring.points })).toMatch('見つかりません')
+    expect(err(s, { type: 'setAislePoints', id: 'aisle-2', points: [{ x: 0, y: 0 }, { x: NaN, y: 0 }, { x: 1, y: 1 }] })).toMatch('数ではありません')
+  })
+
+  it('moveAisle は中心線ごとずらす', () => {
+    let s = ok(createEmptyScene(), { type: 'addAisle', aisle: ell })
+    s = ok(s, { type: 'addAisle', aisle: ring })
+    const s2 = ok(s, { type: 'moveAisle', ids: ['aisle-1'], dx: 100, dy: -200 })
+    expect(s2.aisles[0]!.points[2]).toEqual({ x: 10100, y: 4800 })
+    expect(s2.aisles[1]).toBe(s.aisles[1])
+    expect(err(s, { type: 'moveAisle', ids: ['aisle-1'], dx: Infinity, dy: 0 })).toMatch('数ではありません')
+    expect(err(s, { type: 'moveAisle', ids: [], dx: 0, dy: 0 })).toMatch('ありません')
   })
 })

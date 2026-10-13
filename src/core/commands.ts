@@ -21,6 +21,8 @@ export type Command =
   | { type: 'addAisle'; aisle: Aisle } // AGV の通路を描く。id は呼ぶ側が決める（nextAisleId）
   | { type: 'updateAisle'; ids: string[]; changes: AisleChanges } // 通路の名前・幅を変える。中心線は動かさない
   | { type: 'removeAisle'; ids: string[] } // 通路を消す
+  | { type: 'moveAisle'; ids: string[]; dx: number; dy: number } // 通路を中心線ごとずらす（mm）
+  | { type: 'setAislePoints'; id: string; points: Point[] } // 通路の中心線の頂点を差し替える（頂点を動かす・足す・消す）。周回かどうかは変えない
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
 
 // update で変えられる項目。書いたものだけ変える
@@ -60,6 +62,10 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return updateAisle(scene, cmd.ids, cmd.changes)
     case 'removeAisle':
       return removeAisle(scene, cmd.ids)
+    case 'moveAisle':
+      return moveAisle(scene, cmd.ids, cmd.dx, cmd.dy)
+    case 'setAislePoints':
+      return setAislePoints(scene, cmd.id, cmd.points)
     case 'loadScene':
       return loadScene(cmd.scene)
   }
@@ -260,6 +266,27 @@ function removeAisle(scene: Scene, ids: string[]): CommandResult {
   if (bad) return fail(bad)
   const targets = new Set(ids)
   return { ok: true, scene: { ...scene, aisles: scene.aisles.filter((a) => !targets.has(a.id)) } }
+}
+
+function moveAisle(scene: Scene, ids: string[], dx: number, dy: number): CommandResult {
+  const bad = checkAisleIds(scene, ids)
+  if (bad) return fail(bad)
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return fail('移動量が数ではありません')
+  const targets = new Set(ids)
+  const shift = (a: Aisle): Aisle => ({ ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) })
+  return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (targets.has(a.id) ? shift(a) : a)) } }
+}
+
+// 頂点の列を差し替え、通路として受け付けられるかを確かめ直す（頂点が足りない・同じ点が続くなら断る）
+function setAislePoints(scene: Scene, id: string, points: Point[]): CommandResult {
+  const bad = checkAisleIds(scene, [id])
+  if (bad) return fail(bad)
+  if (!Array.isArray(points)) return fail('通路の頂点（points）がありません')
+  const old = scene.aisles.find((a) => a.id === id)!
+  const next: Aisle = { ...old, points: points.map((p) => ({ x: p?.x, y: p?.y })) }
+  const badA = checkAisle(next)
+  if (badA) return fail(badA)
+  return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (a.id === id ? next : a)) } }
 }
 
 // 空のシーンに背景・敷地・設備・通路を 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。

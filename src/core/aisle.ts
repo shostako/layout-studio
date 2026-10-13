@@ -74,6 +74,40 @@ export function aisleHitTest(scene: Scene, p: Point, slack = 0): string | null {
   return null
 }
 
+// 頂点 i を p に動かした頂点の列
+export function moveAisleVertex(points: readonly Point[], i: number, p: Point): Point[] {
+  return points.map((q, j) => (j === i ? { x: p.x, y: p.y } : q))
+}
+
+// 線分 seg（aisleSegments の番号。周回の閉じる辺は最後の番号）の途中に p を足した頂点の列。足した頂点は seg + 1 番目になる
+export function insertAisleVertex(points: readonly Point[], seg: number, p: Point): Point[] {
+  return [...points.slice(0, seg + 1), { x: p.x, y: p.y }, ...points.slice(seg + 1)]
+}
+
+// 頂点 i を除いた頂点の列。頂点が足りなくなるかは、コマンド（checkAisle）が確かめる
+export function removeAisleVertex(points: readonly Point[], i: number): Point[] {
+  return points.filter((_, j) => j !== i)
+}
+
+// p から tol 以内にある頂点の番号（いちばん近いもの）。無ければ null
+export function aisleVertexAt(a: Aisle, p: Point, tol: number): number | null {
+  let best: number | null = null
+  let bestD = tol
+  for (const [i, q] of a.points.entries()) {
+    const d = Math.hypot(q.x - p.x, q.y - p.y)
+    if (d <= bestD) {
+      best = i
+      bestD = d
+    }
+  }
+  return best
+}
+
+// 線分ごとの中点（頂点を足すときのつまみ）。番号は aisleSegments と同じ
+export function aisleMidpoints(a: Aisle): Point[] {
+  return aisleSegments(a).map(([p, q]) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }))
+}
+
 // まだ使われていない通路の id（'aisle-1', 'aisle-2', ...）
 export function nextAisleId(scene: Scene): string {
   let max = 0
