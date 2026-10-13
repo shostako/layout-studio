@@ -47,8 +47,12 @@ export type Editor = {
   snapStep(): number
   // 選択中の設備の id
   selection(): string[]
-  // 設備の選択を変える（通路を選んだときに設備の選択を外すなど）
+  // 設備の選択を変える
   select(ids: string[]): void
+  // 通路やつなぎなど、設備でないものを選ぶ部品が呼ぶ。設備の選択を外し、他の部品に owner を知らせる（受けた部品は自分の選択を外す）。
+  // 設備・通路・つなぎは同時に選ばない
+  claimSelection(owner: string): void
+  onClaim(listener: (owner: string) => void): void
   // ふだんの操作で、設備の無い所を左クリックしたときに呼ぶ（通路を選ぶのに使う）。
   // 設備の選択は呼ぶ前に外している（Shift なしのとき）
   onEmptyClick(listener: (at: Point, e: PointerEvent) => void): void
@@ -113,6 +117,7 @@ export function mountEditor(canvas: Canvas): Editor {
   const listeners: (() => void)[] = []
   const emptyClickListeners: ((at: Point, e: PointerEvent) => void)[] = []
   const grabListeners: ((at: Point, e: PointerEvent) => Grab | null)[] = []
+  const claimListeners: ((owner: string) => void)[] = []
   let lastShown: Scene | null = null
 
   // 今の操作をやめて別の操作に移る。道具を使っていたら知らせる
@@ -785,6 +790,12 @@ export function mountEditor(canvas: Canvas): Editor {
       selected = ids
       render()
     },
+    claimSelection: (owner) => {
+      selected = []
+      for (const f of claimListeners) f(owner)
+      render()
+    },
+    onClaim: (f) => claimListeners.push(f),
     onEmptyClick: (f) => emptyClickListeners.push(f),
     onGrab: (f) => grabListeners.push(f),
     shown: () => lastShown ?? scene(),

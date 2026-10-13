@@ -1,5 +1,5 @@
 // シーンの JSON ファイル: 書き出しと、読み込み（古い版の変換と中身の確かめ）。DOM に触らない。
-// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles）。形を変えるときは SCENE_VERSION を上げ、
+// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles・links）。形を変えるときは SCENE_VERSION を上げ、
 // MIGRATIONS に 1 つ前の版から変換する関数を足す。
 
 import { applyCommand } from './commands'
@@ -23,6 +23,8 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
         )
       : d.equipment,
   }),
+  // 版 5 で工程のつなぎを足した。版 4 には無いので空
+  4: (d) => ({ ...d, links: [] }),
 }
 
 export function serializeScene(scene: Scene): string {

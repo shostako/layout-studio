@@ -3,6 +3,7 @@
 
 import { checkAisle, type Aisle } from './aisle'
 import { calibrate, checkBackground, type Background } from './background'
+import { checkLink, sameLink, type Link } from './flow'
 import { checkSite, type Site } from './site'
 import { NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type Rotation, type Scene } from './scene'
 import type { Point } from './viewport'
@@ -11,8 +12,8 @@ export type Command =
   | { type: 'add'; equipment: Equipment } // 設備を置く。id は呼ぶ側が決める（nextEquipmentId）
   | { type: 'move'; ids: string[]; dx: number; dy: number } // 設備をずらす（mm）
   | { type: 'rotate'; ids: string[]; quarterTurns: number } // 各設備の中心のまわりに 90 度 × n 回す。正が時計回り
-  | { type: 'remove'; ids: string[] } // 設備を消す
-  | { type: 'duplicate'; ids: string[]; newIds: string[]; dx: number; dy: number } // 設備を写して dx, dy ずらして置く。新しい id は呼ぶ側が決め、ids と同じ順に並べる
+  | { type: 'remove'; ids: string[] } // 設備を消す。その設備につないだつなぎも消す
+  | { type: 'duplicate'; ids: string[]; newIds: string[]; dx: number; dy: number } // 設備を写して dx, dy ずらして置く。新しい id は呼ぶ側が決め、ids と同じ順に並べる。写した設備どうしのつなぎも写す
   | { type: 'update'; ids: string[]; changes: EquipmentChanges } // 置いた設備の名前・寸法・色・余白を変える。寸法を変えても外接の長方形の左上と回転は動かさない
   | { type: 'setBackground'; background: Background | null } // 背景の画像を置く・差し替える・外す（null）
   | { type: 'calibrateBackground'; a: Point; b: Point; distance: number } // 図面の上の 2 点が distance mm 離れているとして縮尺を合わせる。a は動かない
@@ -23,6 +24,8 @@ export type Command =
   | { type: 'removeAisle'; ids: string[] } // 通路を消す
   | { type: 'moveAisle'; ids: string[]; dx: number; dy: number } // 通路を中心線ごとずらす（mm）
   | { type: 'setAislePoints'; id: string; points: Point[] } // 通路の中心線の頂点を差し替える（頂点を動かす・足す・消す）。周回かどうかは変えない
+  | { type: 'link'; links: Link[] } // 工程のつなぎを足す（from → to）。1 本でも断られたら、どれも足さない
+  | { type: 'unlink'; links: Link[] } // 工程のつなぎを外す
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
 
 // update で変えられる項目。書いたものだけ変える
@@ -66,6 +69,10 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return moveAisle(scene, cmd.ids, cmd.dx, cmd.dy)
     case 'setAislePoints':
       return setAislePoints(scene, cmd.id, cmd.points)
+    case 'link':
+      return link(scene, cmd.links)
+    case 'unlink':
+      return unlink(scene, cmd.links)
     case 'loadScene':
       return loadScene(cmd.scene)
   }
@@ -142,7 +149,9 @@ function remove(scene: Scene, ids: string[]): CommandResult {
   const bad = checkIds(scene, ids)
   if (bad) return fail(bad)
   const targets = new Set(ids)
-  return { ok: true, scene: { ...scene, equipment: scene.equipment.filter((e) => !targets.has(e.id)) } }
+  const equipment = scene.equipment.filter((e) => !targets.has(e.id))
+  const links = scene.links.filter((l) => !targets.has(l.from) && !targets.has(l.to))
+  return { ok: true, scene: { ...scene, equipment, links } }
 }
 
 // 写しは元の設備の並び順のまま末尾に足す。名前は番号の続きにする（duplicateName）
@@ -157,7 +166,14 @@ function duplicate(scene: Scene, ids: string[], newIds: string[], dx: number, dy
     r = add(r.scene, { ...src, id: newIds[i]!, name: duplicateName(r.scene, src.name), x: src.x + dx, y: src.y + dy })
     if (!r.ok) return r
   }
-  return r
+  // 写した設備どうしのつなぎを、写しどうしにも張る（1 列を写すと、写しも同じ順につながる）
+  const copyOf = new Map(ids.map((id, i) => [id, newIds[i]!]))
+  const copied = scene.links.flatMap((l) => {
+    const from = copyOf.get(l.from)
+    const to = copyOf.get(l.to)
+    return from !== undefined && to !== undefined ? [{ from, to }] : []
+  })
+  return copied.length ? link(r.scene, copied) : r
 }
 
 const COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
@@ -289,7 +305,26 @@ function setAislePoints(scene: Scene, id: string, points: Point[]): CommandResul
   return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (a.id === id ? next : a)) } }
 }
 
-// 空のシーンに背景・敷地・設備・通路を 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
+function link(scene: Scene, links: Link[]): CommandResult {
+  if (!Array.isArray(links) || links.length === 0) return fail('つなぎがありません')
+  let next = scene
+  for (const l of links) {
+    const bad = checkLink(next, l)
+    if (bad) return fail(bad)
+    next = { ...next, links: [...next.links, { from: l.from, to: l.to }] }
+  }
+  return { ok: true, scene: next }
+}
+
+function unlink(scene: Scene, links: Link[]): CommandResult {
+  if (!Array.isArray(links) || links.length === 0) return fail('外すつなぎがありません')
+  for (const l of links) {
+    if (typeof l !== 'object' || l === null || !scene.links.some((x) => sameLink(x, l))) return fail('外すつなぎが見つかりません')
+  }
+  return { ok: true, scene: { ...scene, links: scene.links.filter((x) => !links.some((l) => sameLink(x, l))) } }
+}
+
+// 空のシーンに背景・敷地・設備・通路・つなぎを 1 つずつ足し直して作る。外から来たシーン（ファイル・AI）も、置くときと同じ確かめを通る。
 // 知らない項目は落とす
 function loadScene(next: Scene): CommandResult {
   if (typeof next !== 'object' || next === null) return fail('シーンの形ではありません')
@@ -314,6 +349,11 @@ function loadScene(next: Scene): CommandResult {
   for (const [i, a] of next.aisles.entries()) {
     if (typeof a !== 'object' || a === null) return fail(`${i + 1} 番目の通路が通路の形ではありません`)
     r = addAisle(r.scene, a)
+    if (!r.ok) return r
+  }
+  if (!Array.isArray(next.links)) return fail('工程のつなぎの一覧（links）がありません')
+  if (next.links.length) {
+    r = link(r.scene, next.links)
     if (!r.ok) return r
   }
   return r

@@ -142,6 +142,12 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     selected = []
     vertex = null
   })
+  // つなぎを選んだら通路の選択を外す
+  editor.onClaim((owner) => {
+    if (owner === 'aisle') return
+    selected = []
+    vertex = null
+  })
 
   const liveSelection = () => selected.filter((id) => editor.scene().aisles.some((a) => a.id === id))
   const select = (ids: string[]) => {
@@ -184,8 +190,8 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
   // ---- 選ぶ: 設備の無い所のクリックで、通路に当たれば選ぶ ----
   editor.onEmptyClick((at) => {
     const hit = aisleHitTest(editor.scene(), at, HIT_SLACK_PX / canvas.getViewport().scale)
-    // 設備と通路は同時に選ばない
-    if (hit) editor.select([])
+    // 設備・通路・つなぎは同時に選ばない
+    if (hit) editor.claimSelection('aisle')
     selected = hit ? [hit] : []
     vertex = null
   })
@@ -242,7 +248,7 @@ export function mountAisles(canvas: Canvas, editor: Editor): void {
     const hit = aisleHitTest(scene, at, HIT_SLACK_PX / s)
     const target = scene.aisles.find((x) => x.id === hit)
     if (!target) return null
-    editor.select([])
+    editor.claimSelection('aisle')
     if (!selected.includes(target.id)) select([target.id])
     else vertex = null
     return moveGrab(target, at)
