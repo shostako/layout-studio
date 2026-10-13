@@ -354,3 +354,26 @@ body {
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
+.props {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+}
+.props label {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+.props label[hidden],
+.props[hidden] {
+  display: none;
+}
+.props input {
+  font: inherit;
+  min-width: 0;
+}
+.props input[type='number'] {
+  font-variant-numeric: tabular-nums;
+}

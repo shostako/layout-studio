@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyCommand, type Command } from './commands'
-import { createEmptyScene, type Equipment, type Scene } from './scene'
+import { createEmptyScene, footprint, type Equipment, type Scene } from './scene'
 
 function eq(id: string, over: Partial<Equipment> = {}): Equipment {
   return { id, kind: 'molding-machine', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 0, color: '#888', ...over }
@@ -90,5 +90,64 @@ describe('remove', () => {
 
   it('無い id が混じっていたら何も消さずに断る', () => {
     expect(err(sceneWith(eq('a')), { type: 'remove', ids: ['a', 'z'] })).toMatch('見つかりません: z')
+  })
+})
+
+describe('duplicate', () => {
+  it('写しを末尾に足し、ずらして、名前は番号の続きにする', () => {
+    const s = sceneWith(eq('a', { name: '成形機 1' }), eq('b', { name: '成形機 2', rotation: 90, color: '#123456' }))
+    const after = ok(s, { type: 'duplicate', ids: ['a', 'b'], newIds: ['c', 'd'], dx: 3000, dy: 0 })
+    expect(after.equipment.map((e) => [e.id, e.name, e.x])).toEqual([
+      ['a', '成形機 1', 1000],
+      ['b', '成形機 2', 1000],
+      ['c', '成形機 3', 4000],
+      ['d', '成形機 4', 4000],
+    ])
+    // 寸法・回転・色・種類は元のまま
+    expect(after.equipment[3]).toMatchObject({ kind: 'molding-machine', width: 3000, depth: 1500, rotation: 90, color: '#123456' })
+  })
+
+  it('id が足りない・重複する、無い設備、数でないずらし量は何も足さずに断る', () => {
+    const s = sceneWith(eq('a'), eq('b'))
+    expect(err(s, { type: 'duplicate', ids: ['a', 'b'], newIds: ['c'], dx: 0, dy: 0 })).toMatch('数が')
+    expect(err(s, { type: 'duplicate', ids: ['a', 'b'], newIds: ['c', 'c'], dx: 0, dy: 0 })).toMatch('重複')
+    expect(err(s, { type: 'duplicate', ids: ['a'], newIds: ['b'], dx: 0, dy: 0 })).toMatch('重複')
+    expect(err(s, { type: 'duplicate', ids: ['z'], newIds: ['c'], dx: 0, dy: 0 })).toMatch('見つかりません')
+    expect(err(s, { type: 'duplicate', ids: ['a'], newIds: ['c'], dx: NaN, dy: 0 })).toMatch('数ではありません')
+  })
+})
+
+describe('update', () => {
+  it('書いた項目だけを変え、回転は変えない', () => {
+    const s = sceneWith(eq('a'), eq('b'))
+    const after = ok(s, { type: 'update', ids: ['a'], changes: { name: ' 成形機 A ', color: '#123' } })
+    expect(after.equipment[0]).toMatchObject({ name: '成形機 A', width: 3000, depth: 1500, x: 1000, y: 2000, rotation: 0, color: '#123' })
+    expect(after.equipment[1]).toBe(s.equipment[1])
+  })
+
+  it('寸法を変えても外接の長方形の左上は動かない（回転していても）', () => {
+    for (const rotation of [0, 90, 180, 270] as const) {
+      const s = sceneWith(eq('a', { rotation }))
+      const before = footprint(s.equipment[0]!)
+      const after = ok(s, { type: 'update', ids: ['a'], changes: { width: 5000, depth: 1000 } }).equipment[0]!
+      expect(after).toMatchObject({ width: 5000, depth: 1000, rotation })
+      const fp = footprint(after)
+      expect([fp.x, fp.y]).toEqual([before.x, before.y])
+    }
+  })
+
+  it('色はまとめて変えられ、小文字にそろえる', () => {
+    const after = ok(sceneWith(eq('a'), eq('b')), { type: 'update', ids: ['a', 'b'], changes: { color: '#AABBCC' } })
+    expect(after.equipment.map((e) => e.color)).toEqual(['#aabbcc', '#aabbcc'])
+  })
+
+  it('空の名前、0 以下の寸法、色の形でないもの、変える項目なしは断る', () => {
+    const s = sceneWith(eq('a'))
+    expect(err(s, { type: 'update', ids: ['a'], changes: { name: '  ' } })).toMatch('名前')
+    expect(err(s, { type: 'update', ids: ['a'], changes: { width: 0 } })).toMatch('正の数')
+    expect(err(s, { type: 'update', ids: ['a'], changes: { depth: Infinity } })).toMatch('正の数')
+    expect(err(s, { type: 'update', ids: ['a'], changes: { color: 'red' } })).toMatch('#rrggbb')
+    expect(err(s, { type: 'update', ids: ['a'], changes: {} })).toMatch('変える項目')
+    expect(err(s, { type: 'update', ids: ['z'], changes: { width: 1 } })).toMatch('見つかりません')
   })
 })

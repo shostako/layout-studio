@@ -3,7 +3,7 @@
 
 import { calibrate, checkBackground, type Background } from './background'
 import { checkSite, type Site } from './site'
-import { SCENE_VERSION, createEmptyScene, type Equipment, type Rotation, type Scene } from './scene'
+import { SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Equipment, type Rotation, type Scene } from './scene'
 import type { Point } from './viewport'
 
 export type Command =
@@ -11,11 +11,16 @@ export type Command =
   | { type: 'move'; ids: string[]; dx: number; dy: number } // 設備をずらす（mm）
   | { type: 'rotate'; ids: string[]; quarterTurns: number } // 各設備の中心のまわりに 90 度 × n 回す。正が時計回り
   | { type: 'remove'; ids: string[] } // 設備を消す
+  | { type: 'duplicate'; ids: string[]; newIds: string[]; dx: number; dy: number } // 設備を写して dx, dy ずらして置く。新しい id は呼ぶ側が決め、ids と同じ順に並べる
+  | { type: 'update'; ids: string[]; changes: EquipmentChanges } // 置いた設備の名前・寸法・色を変える。寸法を変えても外接の長方形の左上と回転は動かさない
   | { type: 'setBackground'; background: Background | null } // 背景の画像を置く・差し替える・外す（null）
   | { type: 'calibrateBackground'; a: Point; b: Point; distance: number } // 図面の上の 2 点が distance mm 離れているとして縮尺を合わせる。a は動かない
   | { type: 'moveBackground'; dx: number; dy: number } // 背景をずらす（mm）
   | { type: 'setSite'; site: Site | null } // 敷地の外形を描く・差し替える・消す（null）
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
+
+// update で変えられる項目。書いたものだけ変える
+export type EquipmentChanges = { name?: string; width?: number; depth?: number; color?: string }
 
 export type CommandResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
@@ -29,6 +34,10 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return rotate(scene, cmd.ids, cmd.quarterTurns)
     case 'remove':
       return remove(scene, cmd.ids)
+    case 'duplicate':
+      return duplicate(scene, cmd.ids, cmd.newIds, cmd.dx, cmd.dy)
+    case 'update':
+      return update(scene, cmd.ids, cmd.changes)
     case 'setBackground':
       return setBackground(scene, cmd.background)
     case 'calibrateBackground':
@@ -95,6 +104,50 @@ function remove(scene: Scene, ids: string[]): CommandResult {
   if (bad) return fail(bad)
   const targets = new Set(ids)
   return { ok: true, scene: { ...scene, equipment: scene.equipment.filter((e) => !targets.has(e.id)) } }
+}
+
+// 写しは元の設備の並び順のまま末尾に足す。名前は番号の続きにする（duplicateName）
+function duplicate(scene: Scene, ids: string[], newIds: string[], dx: number, dy: number): CommandResult {
+  const bad = checkIds(scene, ids)
+  if (bad) return fail(bad)
+  if (!Array.isArray(newIds) || newIds.length !== ids.length) return fail('新しい id の数が対象の設備の数と違います')
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return fail('ずらす量が数ではありません')
+  let r: CommandResult = { ok: true, scene }
+  for (const [i, id] of ids.entries()) {
+    const src = scene.equipment.find((e) => e.id === id)!
+    r = add(r.scene, { ...src, id: newIds[i]!, name: duplicateName(r.scene, src.name), x: src.x + dx, y: src.y + dy })
+    if (!r.ok) return r
+  }
+  return r
+}
+
+const COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
+
+function update(scene: Scene, ids: string[], changes: EquipmentChanges): CommandResult {
+  const bad = checkIds(scene, ids)
+  if (bad) return fail(bad)
+  if (typeof changes !== 'object' || changes === null) return fail('変える項目がありません')
+  const { name, width, depth, color } = changes
+  if (name === undefined && width === undefined && depth === undefined && color === undefined) return fail('変える項目がありません')
+  if (name !== undefined && (typeof name !== 'string' || !name.trim())) return fail('名前を入れてください')
+  for (const v of [width, depth])
+    if (v !== undefined && !(typeof v === 'number' && v > 0 && Number.isFinite(v))) return fail('設備の幅と奥行は正の数にしてください')
+  if (color !== undefined && (typeof color !== 'string' || !COLOR.test(color))) return fail('色は #rrggbb の形で書いてください')
+  const set: EquipmentChanges = {}
+  if (name !== undefined) set.name = name.trim()
+  if (width !== undefined) set.width = width
+  if (depth !== undefined) set.depth = depth
+  if (color !== undefined) set.color = color.toLowerCase()
+  // 寸法を変えたら、外接の長方形の左上がそのままになるよう中心をずらす（スナップした位置や左・上の隣との接し方を崩さない）
+  return {
+    ok: true,
+    scene: updateEach(scene, ids, (e) => {
+      const next = { ...e, ...set }
+      const a = footprint(e)
+      const b = footprint(next)
+      return { ...next, x: e.x + (a.x - b.x), y: e.y + (a.y - b.y) }
+    }),
+  }
 }
 
 function setBackground(scene: Scene, bg: Background | null): CommandResult {
