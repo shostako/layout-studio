@@ -161,7 +161,7 @@ export function findOverlaps(scene: Scene): Overlap[] {
       if (hit.length === 0) continue
       out.push({ kind: 'aisle', equipment: id, aisle: a.id, regions: hit.map((p) => clipToRect(p, r)).filter((p) => p.length > 0) })
     }
-  // 余白どうし・余白と通路・余白と敷地の外は、まだ示さない（DECISIONS.md の「未決」）
+  // 余白どうし・余白と通路・余白と敷地の外は示さない（DECISIONS.md）
   for (const owner of scene.equipment) {
     const zone = clearanceZone(owner)
     if (zone.length === 0) continue
