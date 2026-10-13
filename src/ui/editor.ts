@@ -1,10 +1,12 @@
 // 設備の配置の操作: ひな形から置く、選ぶ、ドラッグで動かす、スナップ、回転、複製、削除、名前・寸法・色の変更、元に戻す・やり直す。
+// 設備どうし・設備と通路の重なりを示す（置く途中とドラッグ中は、置く先・動かした先で判定する）。
 // シーンは必ずコマンド（src/core/commands.ts）を history.execute に通して変える。
 // 選択・置く途中・ドラッグ中の見た目は画面の状態で、シーンには入れない。
 import type { Canvas } from './canvas'
 import { applyCommand, type Command, type EquipmentChanges } from '../core/commands'
 import { canRedo, canUndo, createHistory, execute, redo, undo, type History } from '../core/history'
 import { DEFAULT_SNAP, SNAP_STEPS, hitTest, snapCenter, snapMove } from '../core/placement'
+import { findOverlaps, overlappingEquipment, type Overlap } from '../core/overlap'
 import { equipmentOutsideSite } from '../core/site'
 import { createEmptyScene, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, type Equipment, type Rotation, type Scene } from '../core/scene'
 import { TEMPLATES, equipmentFromTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
@@ -79,7 +81,10 @@ export function mountEditor(canvas: Canvas): Editor {
   layer.setAttribute('class', 'equipment-layer')
   const toolLayer = document.createElementNS(SVG_NS, 'g')
   toolLayer.setAttribute('class', 'tool-layer')
-  canvas.world.append(layer, toolLayer)
+  // 重なっている部分。設備より上に、半透明の赤でまとめて描く（重なりどうしが濃くならないよう、透明度は層にかける）
+  const overlapLayer = document.createElementNS(SVG_NS, 'g')
+  overlapLayer.setAttribute('class', 'overlap-layer')
+  canvas.world.append(layer, overlapLayer, toolLayer)
   const listeners: (() => void)[] = []
   const emptyClickListeners: ((at: Point, e: PointerEvent) => void)[] = []
 
@@ -255,7 +260,14 @@ export function mountEditor(canvas: Canvas): Editor {
   keys.className = 'keys'
   keys.textContent =
     'クリック: 選ぶ　Shift+クリック: 足す・外す　ドラッグ: 動かす　R / Shift+R: 回す　矢印: スナップ幅ずつ動かす　Ctrl+D: 複製　Delete: 消す　Ctrl+Z / Ctrl+Y: 元に戻す / やり直す　Esc: やめる'
-  side.append(h1, list, h2, info, props, actions, msg, keys)
+  // 重なりの一覧。行をクリックすると、かかわる設備を選ぶ
+  const h3 = document.createElement('h2')
+  h3.textContent = '重なり'
+  const overlapInfo = document.createElement('div')
+  overlapInfo.className = 'info'
+  const overlapList = document.createElement('ul')
+  overlapList.className = 'overlap-list'
+  side.append(h1, list, h2, info, props, actions, msg, h3, overlapInfo, overlapList, keys)
 
   // ---- 上の道具バー: 元に戻す・やり直す・スナップ ----
   const group = document.createElement('span')
@@ -336,12 +348,16 @@ export function mountEditor(canvas: Canvas): Editor {
     const sel = new Set(selected)
     // 敷地からはみ出した設備。ドラッグ中は動かした先で判定する
     const outside = new Set(equipmentOutsideSite(shown))
-    layer.replaceChildren(
-      ...shown.equipment.map((eq) =>
-        drawEquipment(eq, `equipment${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}`),
-      ),
-    )
-    if (mode.type === 'placing' && pointer) layer.append(drawEquipment(ghost(mode, pointer), 'equipment ghost'))
+    // 重なり。置く途中は、置く先の設備（id は空）も入れて判定する
+    const placed = mode.type === 'placing' && pointer ? ghost(mode, pointer) : null
+    const overlaps = findOverlaps(placed ? { ...shown, equipment: [...shown.equipment, placed] } : shown)
+    const overlapping = overlappingEquipment(overlaps)
+    const cls = (eq: Equipment) =>
+      `${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}`
+    layer.replaceChildren(...shown.equipment.map((eq) => drawEquipment(eq, `equipment${cls(eq)}`)))
+    if (placed) layer.append(drawEquipment(placed, `equipment ghost${cls(placed)}`))
+    overlapLayer.replaceChildren(...overlaps.flatMap(drawOverlap))
+    renderOverlapList(shown, overlaps)
     toolLayer.replaceChildren(...(mode.type === 'tool' ? mode.tool.overlay(pointer) : []))
     canvas.svg.classList.toggle('picking', mode.type === 'tool')
 
@@ -357,10 +373,13 @@ export function mountEditor(canvas: Canvas): Editor {
       const fp = footprint(e)
       info.textContent =
         `${e.name}　${e.width} × ${e.depth} mm、${e.rotation}°　中心 (${Math.round(e.x)}, ${Math.round(e.y)})　左上 (${Math.round(fp.x)}, ${Math.round(fp.y)})` +
-        (outside.has(e.id) ? '　敷地からはみ出し' : '')
+        (outside.has(e.id) ? '　敷地からはみ出し' : '') +
+        (overlapping.has(e.id) ? `　重なり: ${partners(shown, overlaps, e.id).join('、')}` : '')
     } else if (items.length > 1) {
       const out = items.filter((e) => outside.has(e.id)).length
-      info.textContent = `${items.length} 台${out ? `（うち ${out} 台が敷地からはみ出し）` : ''}`
+      const ov = items.filter((e) => overlapping.has(e.id)).length
+      const notes = [out ? `${out} 台が敷地からはみ出し` : '', ov ? `${ov} 台が重なり` : ''].filter(Boolean)
+      info.textContent = `${items.length} 台${notes.length ? `（うち ${notes.join('、')}）` : ''}`
     } else {
       info.textContent = 'なし'
     }
@@ -382,6 +401,69 @@ export function mountEditor(canvas: Canvas): Editor {
     redoBtn.disabled = !canRedo(history)
     msg.textContent = message
     for (const f of listeners) f()
+  }
+
+  // 重なっている部分の図形
+  function drawOverlap(o: Overlap): SVGElement[] {
+    if (o.kind === 'equipment') {
+      const r = document.createElementNS(SVG_NS, 'rect')
+      for (const [k, v] of Object.entries({ x: o.region.x, y: o.region.y, width: o.region.width, height: o.region.height }))
+        r.setAttribute(k, String(v))
+      return [r]
+    }
+    return o.regions.map((poly) => {
+      const p = document.createElementNS(SVG_NS, 'polygon')
+      p.setAttribute('points', poly.map((q) => `${q.x},${q.y}`).join(' '))
+      return p
+    })
+  }
+
+  // 設備 id と重なっている相手の名前（設備、続いて通路）
+  function partners(s: Scene, overlaps: readonly Overlap[], id: string): string[] {
+    const out: string[] = []
+    for (const o of overlaps) {
+      if (o.kind === 'equipment' && (o.a === id || o.b === id)) out.push(equipmentName(s, o.a === id ? o.b : o.a))
+      if (o.kind === 'aisle' && o.equipment === id) out.push(s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle)
+    }
+    return out
+  }
+  const equipmentName = (s: Scene, id: string) =>
+    id === '' && mode.type === 'placing' ? `置く${mode.template.name}` : (s.equipment.find((e) => e.id === id)?.name ?? id)
+
+  // 左の欄の重なりの一覧。多いときは先頭だけ出す
+  const OVERLAP_ROWS = 20
+  function renderOverlapList(s: Scene, overlaps: readonly Overlap[]) {
+    const nEq = overlaps.filter((o) => o.kind === 'equipment').length
+    const nAisle = overlaps.length - nEq
+    overlapInfo.textContent = overlaps.length
+      ? [nEq ? `設備どうし ${nEq} 件` : '', nAisle ? `設備と通路 ${nAisle} 件` : ''].filter(Boolean).join('、')
+      : 'なし'
+    overlapInfo.classList.toggle('warn', overlaps.length > 0)
+    overlapList.replaceChildren(
+      ...overlaps.slice(0, OVERLAP_ROWS).map((o) => {
+        const li = document.createElement('li')
+        const ids = o.kind === 'equipment' ? [o.a, o.b] : [o.equipment]
+        li.textContent =
+          o.kind === 'equipment'
+            ? `${equipmentName(s, o.a)} と ${equipmentName(s, o.b)}`
+            : `${equipmentName(s, o.equipment)} と ${s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle}`
+        li.title = 'クリックでこの設備を選ぶ'
+        li.addEventListener('click', () => {
+          const live = ids.filter((id) => scene().equipment.some((e) => e.id === id))
+          if (live.length && mode.type === 'idle') {
+            selected = live
+            render()
+          }
+        })
+        return li
+      }),
+    )
+    if (overlaps.length > OVERLAP_ROWS) {
+      const li = document.createElement('li')
+      li.className = 'more'
+      li.textContent = `ほか ${overlaps.length - OVERLAP_ROWS} 件`
+      overlapList.append(li)
+    }
   }
 
   const ghost = (m: Extract<Mode, { type: 'placing' }>, at: Point): Equipment =>
