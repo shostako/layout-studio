@@ -3,7 +3,7 @@ import { applyCommand, type Command } from './commands'
 import { createEmptyScene, footprint, type Equipment, type Scene } from './scene'
 
 function eq(id: string, over: Partial<Equipment> = {}): Equipment {
-  return { id, kind: 'molding-machine', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 0, color: '#888', ...over }
+  return { id, kind: 'molding-machine', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 0, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 }, ...over }
 }
 
 function sceneWith(...items: Equipment[]): Scene {
@@ -149,5 +149,42 @@ describe('update', () => {
     expect(err(s, { type: 'update', ids: ['a'], changes: { color: 'red' } })).toMatch('#rrggbb')
     expect(err(s, { type: 'update', ids: ['a'], changes: {} })).toMatch('変える項目')
     expect(err(s, { type: 'update', ids: ['z'], changes: { width: 1 } })).toMatch('見つかりません')
+  })
+})
+
+describe('余白（clearance）', () => {
+  it('add で余白を書かなければ 0、書けばその値で置く', () => {
+    const { clearance: _, ...bare } = eq('a')
+    const s = ok(createEmptyScene(), { type: 'add', equipment: bare as Equipment })
+    expect(s.equipment[0]!.clearance).toEqual({ top: 0, right: 0, bottom: 0, left: 0 })
+    const c = { top: 1, right: 2, bottom: 3, left: 4 }
+    expect(ok(createEmptyScene(), { type: 'add', equipment: eq('a', { clearance: c }) }).equipment[0]!.clearance).toEqual(c)
+  })
+
+  it('add で負の数・数でない余白、辺の欠けた余白は断る', () => {
+    expect(err(createEmptyScene(), { type: 'add', equipment: eq('a', { clearance: { top: -1, right: 0, bottom: 0, left: 0 } }) })).toMatch('余白')
+    expect(err(createEmptyScene(), { type: 'add', equipment: eq('a', { clearance: { top: 0, right: 0, bottom: 0 } as never }) })).toMatch('余白')
+    expect(err(createEmptyScene(), { type: 'add', equipment: eq('a', { clearance: 5 as never }) })).toMatch('余白')
+  })
+
+  it('update は書いた辺だけ変え、位置と寸法は動かさない。複数をまとめて変えられる', () => {
+    const s = sceneWith(eq('a', { clearance: { top: 1, right: 2, bottom: 3, left: 4 } }), eq('b'))
+    const after = ok(s, { type: 'update', ids: ['a', 'b'], changes: { clearance: { left: 900 } } })
+    expect(after.equipment[0]).toMatchObject({ x: 1000, y: 2000, width: 3000, clearance: { top: 1, right: 2, bottom: 3, left: 900 } })
+    expect(after.equipment[1]!.clearance).toEqual({ top: 0, right: 0, bottom: 0, left: 900 })
+    expect(s.equipment[0]!.clearance.left).toBe(4)
+  })
+
+  it('update で負の数や辺の無い余白は断る', () => {
+    const s = sceneWith(eq('a'))
+    expect(err(s, { type: 'update', ids: ['a'], changes: { clearance: { top: -5 } } })).toMatch('0 以上')
+    expect(err(s, { type: 'update', ids: ['a'], changes: { clearance: { right: NaN } } })).toMatch('0 以上')
+    expect(err(s, { type: 'update', ids: ['a'], changes: { clearance: {} } })).toMatch('辺')
+  })
+
+  it('回しても余白の値は持ったまま（向きは worldClearance で回る）', () => {
+    const c = { top: 1, right: 2, bottom: 3, left: 4 }
+    const after = ok(sceneWith(eq('a', { clearance: c })), { type: 'rotate', ids: ['a'], quarterTurns: 1 })
+    expect(after.equipment[0]!.clearance).toEqual(c)
   })
 })

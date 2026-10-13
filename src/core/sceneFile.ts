@@ -13,6 +13,15 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
   1: (d) => ({ ...d, site: null }),
   // 版 3 で AGV の通路を足した。版 2 には無いので空
   2: (d) => ({ ...d, aisles: [] }),
+  // 版 4 で設備の保守用の余白を足した。版 3 には無いので 0
+  3: (d) => ({
+    ...d,
+    equipment: Array.isArray(d.equipment)
+      ? d.equipment.map((e: unknown) =>
+          typeof e === 'object' && e !== null ? { ...e, clearance: { top: 0, right: 0, bottom: 0, left: 0 } } : e,
+        )
+      : d.equipment,
+  }),
 }
 
 export function serializeScene(scene: Scene): string {

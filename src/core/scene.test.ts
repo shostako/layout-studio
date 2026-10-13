@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SCENE_VERSION, createEmptyScene, duplicateName, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, type Equipment } from './scene'
+import { SCENE_VERSION, clearanceRect, createEmptyScene, worldClearance, duplicateName, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, type Equipment } from './scene'
 
 const machine: Equipment = {
   id: 'eq-1',
@@ -10,7 +10,7 @@ const machine: Equipment = {
   width: 6000,
   depth: 2000,
   rotation: 0,
-  color: '#4a7bd0',
+  color: '#4a7bd0', clearance: { top: 0, right: 0, bottom: 0, left: 0 },
 }
 
 describe('createEmptyScene', () => {
@@ -68,5 +68,22 @@ describe('nextEquipmentIds', () => {
   it('使われている番号の続きを n 個', () => {
     const s = { ...createEmptyScene(), equipment: [{ ...machine, id: 'eq-4' }] }
     expect(nextEquipmentIds(s, 3)).toEqual(['eq-5', 'eq-6', 'eq-7'])
+  })
+})
+
+describe('worldClearance と clearanceRect', () => {
+  const c = { ...machine, clearance: { top: 100, right: 200, bottom: 300, left: 400 } }
+
+  it('回転 0 ではそのまま。余白まで含めた長方形は外接の長方形を広げたもの', () => {
+    expect(worldClearance(c)).toEqual({ top: 100, right: 200, bottom: 300, left: 400 })
+    expect(clearanceRect(c)).toEqual({ x: 1600, y: 1900, width: 6600, height: 2400 })
+  })
+
+  it('時計回りに回すと余白も回る（90 度で上の余白が右へ）', () => {
+    expect(worldClearance({ ...c, rotation: 90 })).toEqual({ top: 400, right: 100, bottom: 200, left: 300 })
+    expect(worldClearance({ ...c, rotation: 180 })).toEqual({ top: 300, right: 400, bottom: 100, left: 200 })
+    expect(worldClearance({ ...c, rotation: 270 })).toEqual({ top: 200, right: 300, bottom: 400, left: 100 })
+    // 90 度: 外接 (4000, 0)〜(6000, 6000) を 上 400・右 100・下 200・左 300 広げる
+    expect(clearanceRect({ ...c, rotation: 90 })).toEqual({ x: 3700, y: -400, width: 2400, height: 6600 })
   })
 })

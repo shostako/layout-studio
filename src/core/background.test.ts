@@ -80,7 +80,7 @@ describe('背景のコマンド', () => {
     const base = ok(createEmptyScene(), { type: 'setBackground', background: bg() })
     const withEq = ok(base, {
       type: 'add',
-      equipment: { id: 'eq-1', kind: 'k', name: 'n', x: 500, y: 500, width: 100, depth: 100, rotation: 0, color: '#888' },
+      equipment: { id: 'eq-1', kind: 'k', name: 'n', x: 500, y: 500, width: 100, depth: 100, rotation: 0, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 } },
     })
     const cal = ok(withEq, { type: 'calibrateBackground', a: { x: 0, y: 0 }, b: { x: 10000, y: 0 }, distance: 30000 })
     expect(cal.background?.mmPerPixel).toBeCloseTo(60)

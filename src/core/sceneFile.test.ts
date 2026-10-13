@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { applyCommand } from './commands'
 import { createBackground } from './background'
-import { createEmptyScene, type Equipment, type Scene } from './scene'
+import { SCENE_VERSION, createEmptyScene, type Equipment, type Scene } from './scene'
 import { migrate, parseScene, sceneFileName, serializeScene } from './sceneFile'
 
 function eq(id: string, over: Partial<Equipment> = {}): Equipment {
-  return { id, kind: 'molding-machine', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 90, color: '#888', ...over }
+  return { id, kind: 'molding-machine', name: id, x: 1000, y: 2000, width: 3000, depth: 1500, rotation: 90, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 }, ...over }
 }
 
 const sample = (): Scene => ({
@@ -95,5 +95,19 @@ describe('loadScene コマンド', () => {
 describe('sceneFileName', () => {
   it('日時からファイル名を作る', () => {
     expect(sceneFileName(new Date(2026, 9, 3, 9, 5))).toBe('layout-20261003-0905.json')
+  })
+})
+
+describe('版 3 からの変換', () => {
+  it('版 3 のファイルは、設備の余白を 0 にして読む', () => {
+    const { clearance: _, ...old } = eq('a')
+    const s = parsed(JSON.stringify({ version: 3, background: null, site: null, equipment: [old], aisles: [] }))
+    expect(s.version).toBe(SCENE_VERSION)
+    expect(s.equipment[0]!.clearance).toEqual({ top: 0, right: 0, bottom: 0, left: 0 })
+  })
+
+  it('余白は保存して読み直しても同じ', () => {
+    const s = { ...createEmptyScene(), equipment: [eq('a', { clearance: { top: 100, right: 0, bottom: 2500, left: 50 } })] }
+    expect(parsed(serializeScene(s))).toEqual(s)
   })
 })

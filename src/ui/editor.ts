@@ -1,14 +1,14 @@
-// 設備の配置の操作: ひな形から置く、選ぶ、ドラッグで動かす、スナップ、回転、複製、削除、名前・寸法・色の変更、元に戻す・やり直す。
-// 設備どうし・設備と通路の重なりを示す（置く途中とドラッグ中は、置く先・動かした先で判定する）。
+// 設備の配置の操作: ひな形から置く、選ぶ、ドラッグで動かす、スナップ、回転、複製、削除、名前・寸法・色・余白の変更、元に戻す・やり直す。
+// 設備どうし・設備と通路の重なりと、保守用の余白への入り込みを示す（置く途中とドラッグ中は、置く先・動かした先で判定する）。
 // シーンは必ずコマンド（src/core/commands.ts）を history.execute に通して変える。
 // 選択・置く途中・ドラッグ中の見た目は画面の状態で、シーンには入れない。
 import type { Canvas } from './canvas'
 import { applyCommand, type Command, type EquipmentChanges } from '../core/commands'
 import { canRedo, canUndo, createHistory, execute, redo, undo, type History } from '../core/history'
 import { DEFAULT_SNAP, SNAP_STEPS, hitTest, snapCenter, snapMove } from '../core/placement'
-import { findOverlaps, overlappingEquipment, type Overlap } from '../core/overlap'
+import { clearanceEquipment, findOverlaps, overlappingEquipment, type Overlap } from '../core/overlap'
 import { equipmentOutsideSite } from '../core/site'
-import { createEmptyScene, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, type Equipment, type Rotation, type Scene } from '../core/scene'
+import { clearanceRect, createEmptyScene, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, worldClearance, type Clearance, type Equipment, type Rotation, type Scene } from '../core/scene'
 import { TEMPLATES, equipmentFromTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
 import { formatLength, type Point } from '../core/viewport'
 
@@ -79,12 +79,18 @@ export function mountEditor(canvas: Canvas): Editor {
 
   const layer = document.createElementNS(SVG_NS, 'g')
   layer.setAttribute('class', 'equipment-layer')
+  // 保守用の余白。設備（と通路）より下に、薄い塗りと破線の枠で描く
+  const clearanceLayer = document.createElementNS(SVG_NS, 'g')
+  clearanceLayer.setAttribute('class', 'clearance-layer')
+  // 余白に入っている部分。本体の重なり（赤）と分けて橙で描く
+  const clearanceHitLayer = document.createElementNS(SVG_NS, 'g')
+  clearanceHitLayer.setAttribute('class', 'clearance-hit-layer')
   const toolLayer = document.createElementNS(SVG_NS, 'g')
   toolLayer.setAttribute('class', 'tool-layer')
   // 重なっている部分。設備より上に、半透明の赤でまとめて描く（重なりどうしが濃くならないよう、透明度は層にかける）
   const overlapLayer = document.createElementNS(SVG_NS, 'g')
   overlapLayer.setAttribute('class', 'overlap-layer')
-  canvas.world.append(layer, overlapLayer, toolLayer)
+  canvas.world.append(clearanceLayer, layer, clearanceHitLayer, overlapLayer, toolLayer)
   const listeners: (() => void)[] = []
   const emptyClickListeners: ((at: Point, e: PointerEvent) => void)[] = []
 
@@ -115,14 +121,17 @@ export function mountEditor(canvas: Canvas): Editor {
     if (ids.length && run({ type: 'remove', ids })) selected = []
     render()
   }
-  // 選んだ設備を写し、まとめて囲む長方形の幅だけ右に置く。写しを選び直すので、続けて押すと横に並ぶ
+  // 選んだ設備を写し、まとめて囲む長方形の幅に余白の分を足して右に置く。写しを選び直すので、続けて押すと横に並ぶ。
+  // 余白の分は、選んだ設備の左右の余白のうち最も広いもの（写しの本体が元の余白に入らず、余白どうしは重ねて共用する）
   const duplicateSelection = () => {
     const ids = liveSelection()
-    const box = equipmentBounds(scene().equipment.filter((e) => ids.includes(e.id)))
+    const items = scene().equipment.filter((e) => ids.includes(e.id))
+    const box = equipmentBounds(items)
     if (!box) return
-    const order = scene().equipment.filter((e) => ids.includes(e.id)).map((e) => e.id)
+    const gap = Math.max(0, ...items.map((e) => Math.max(worldClearance(e).left, worldClearance(e).right)))
+    const order = items.map((e) => e.id)
     const newIds = nextEquipmentIds(scene(), order.length)
-    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width, dy: 0 })) selected = newIds
+    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width + gap, dy: 0 })) selected = newIds
     render()
   }
   // 欄に入った時点の選択を覚えておく。入力中にキャンバスで別の設備を選ぶと、
@@ -217,7 +226,7 @@ export function mountEditor(canvas: Canvas): Editor {
   }
   const rotLeft = mkAction('⟲ 90°', '反時計回りに 90 度（Shift+R）', () => rotateSelection(-1))
   const rotRight = mkAction('⟳ 90°', '時計回りに 90 度（R）', () => rotateSelection(1))
-  const dup = mkAction('複製', '選択中の設備を写して右隣に置く（Ctrl+D）', duplicateSelection)
+  const dup = mkAction('複製', '選択中の設備を写して右隣に置く（余白の分だけ離す。Ctrl+D）', duplicateSelection)
   const del = mkAction('削除', '選択中の設備を消す（Delete）', removeSelection)
   // 選択中の設備の名前・寸法・色。値を確定したとき（change）に update のコマンドを 1 回出す
   const props = document.createElement('div')
@@ -243,6 +252,40 @@ export function mountEditor(canvas: Canvas): Editor {
   const widthRow = mkProp('幅 mm', widthInput)
   const depthRow = mkProp('奥行 mm', depthInput)
   mkProp('色', colorInput)
+  // 余白は上・右・下・左（回転 0 のときの向き。設備と一緒に回る）。複数を選んでいれば、変えた辺だけまとめて変える
+  const SIDES: { key: keyof Clearance; label: string }[] = [
+    { key: 'top', label: '上' },
+    { key: 'right', label: '右' },
+    { key: 'bottom', label: '下' },
+    { key: 'left', label: '左' },
+  ]
+  const clearanceInputs = new Map<keyof Clearance, HTMLInputElement>()
+  const clearanceRow = document.createElement('label')
+  clearanceRow.className = 'clearance-row'
+  clearanceRow.title = '保守用の余白（mm）。回転 0 のときの上・右・下・左の辺から外へ取る幅で、設備と一緒に回る。上は向きの印の側'
+  const clearanceBox = document.createElement('span')
+  clearanceBox.className = 'clearance-inputs'
+  for (const { key, label } of SIDES) {
+    const i = document.createElement('input')
+    i.type = 'number'
+    i.min = '0'
+    i.step = '100'
+    i.title = `余白の${label}（mm）`
+    i.addEventListener('change', () => {
+      if (i.value === '') return
+      updateSelection({ clearance: { [key]: Number(i.value) } })
+    })
+    i.addEventListener('focus', () => (editIds = liveSelection()))
+    i.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') i.blur()
+    })
+    const cell = document.createElement('span')
+    cell.append(label, i)
+    clearanceBox.append(cell)
+    clearanceInputs.set(key, i)
+  }
+  clearanceRow.append('余白 mm', clearanceBox)
+  props.append(clearanceRow)
   nameInput.addEventListener('change', () => updateSelection({ name: nameInput.value }))
   widthInput.addEventListener('change', () => updateSelection({ width: Number(widthInput.value) }))
   depthInput.addEventListener('change', () => updateSelection({ depth: Number(depthInput.value) }))
@@ -352,11 +395,16 @@ export function mountEditor(canvas: Canvas): Editor {
     const placed = mode.type === 'placing' && pointer ? ghost(mode, pointer) : null
     const overlaps = findOverlaps(placed ? { ...shown, equipment: [...shown.equipment, placed] } : shown)
     const overlapping = overlappingEquipment(overlaps)
+    const inClearance = clearanceEquipment(overlaps)
     const cls = (eq: Equipment) =>
-      `${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}`
+      `${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}` +
+      `${inClearance.has(eq.id) ? ' in-clearance' : ''}`
+    const all = placed ? [...shown.equipment, placed] : shown.equipment
+    clearanceLayer.replaceChildren(...all.flatMap((eq) => drawClearance(eq, sel.has(eq.id) || eq === placed)))
     layer.replaceChildren(...shown.equipment.map((eq) => drawEquipment(eq, `equipment${cls(eq)}`)))
     if (placed) layer.append(drawEquipment(placed, `equipment ghost${cls(placed)}`))
-    overlapLayer.replaceChildren(...overlaps.flatMap(drawOverlap))
+    overlapLayer.replaceChildren(...overlaps.filter((o) => o.kind !== 'clearance').flatMap(drawOverlap))
+    clearanceHitLayer.replaceChildren(...overlaps.filter((o) => o.kind === 'clearance').flatMap(drawOverlap))
     renderOverlapList(shown, overlaps)
     toolLayer.replaceChildren(...(mode.type === 'tool' ? mode.tool.overlay(pointer) : []))
     canvas.svg.classList.toggle('picking', mode.type === 'tool')
@@ -374,11 +422,13 @@ export function mountEditor(canvas: Canvas): Editor {
       info.textContent =
         `${e.name}　${e.width} × ${e.depth} mm、${e.rotation}°　中心 (${Math.round(e.x)}, ${Math.round(e.y)})　左上 (${Math.round(fp.x)}, ${Math.round(fp.y)})` +
         (outside.has(e.id) ? '　敷地からはみ出し' : '') +
-        (overlapping.has(e.id) ? `　重なり: ${partners(shown, overlaps, e.id).join('、')}` : '')
+        (overlapping.has(e.id) ? `　重なり: ${partners(shown, overlaps, e.id).join('、')}` : '') +
+        (inClearance.has(e.id) ? `　余白: ${clearancePartners(shown, overlaps, e.id).join('、')}` : '')
     } else if (items.length > 1) {
       const out = items.filter((e) => outside.has(e.id)).length
       const ov = items.filter((e) => overlapping.has(e.id)).length
-      const notes = [out ? `${out} 台が敷地からはみ出し` : '', ov ? `${ov} 台が重なり` : ''].filter(Boolean)
+      const cl = items.filter((e) => inClearance.has(e.id)).length
+      const notes = [out ? `${out} 台が敷地からはみ出し` : '', ov ? `${ov} 台が重なり` : '', cl ? `${cl} 台が余白にかかわる` : ''].filter(Boolean)
       info.textContent = `${items.length} 台${notes.length ? `（うち ${notes.join('、')}）` : ''}`
     } else {
       info.textContent = 'なし'
@@ -396,6 +446,12 @@ export function mountEditor(canvas: Canvas): Editor {
       setValue(widthInput, String(first.width))
       setValue(depthInput, String(first.depth))
       setValue(colorInput, items.every((e) => e.color === first.color) && /^#[0-9a-f]{6}$/i.test(first.color) ? first.color : '#000000')
+      // 複数を選んで値がそろわない辺は空にする
+      for (const [key, i] of clearanceInputs) {
+        const v = first.clearance[key]
+        setValue(i, items.every((e) => e.clearance[key] === v) ? String(v) : '')
+        i.placeholder = items.length > 1 ? '—' : ''
+      }
     }
     undoBtn.disabled = !canUndo(history)
     redoBtn.disabled = !canRedo(history)
@@ -405,17 +461,42 @@ export function mountEditor(canvas: Canvas): Editor {
 
   // 重なっている部分の図形
   function drawOverlap(o: Overlap): SVGElement[] {
-    if (o.kind === 'equipment') {
+    const rect = (q: { x: number; y: number; width: number; height: number }) => {
       const r = document.createElementNS(SVG_NS, 'rect')
-      for (const [k, v] of Object.entries({ x: o.region.x, y: o.region.y, width: o.region.width, height: o.region.height }))
-        r.setAttribute(k, String(v))
-      return [r]
+      for (const [k, v] of Object.entries({ x: q.x, y: q.y, width: q.width, height: q.height })) r.setAttribute(k, String(v))
+      return r
     }
+    if (o.kind === 'equipment') return [rect(o.region)]
+    if (o.kind === 'clearance') return o.regions.map(rect)
     return o.regions.map((poly) => {
       const p = document.createElementNS(SVG_NS, 'polygon')
       p.setAttribute('points', poly.map((q) => `${q.x},${q.y}`).join(' '))
       return p
     })
+  }
+
+  // 余白の範囲（本体を含めて囲む長方形）。余白が無ければ描かない
+  function drawClearance(eq: Equipment, strong: boolean): SVGElement[] {
+    const c = eq.clearance
+    if (c.top === 0 && c.right === 0 && c.bottom === 0 && c.left === 0) return []
+    const q = clearanceRect(eq)
+    const r = document.createElementNS(SVG_NS, 'rect')
+    for (const [k, v] of Object.entries({ x: q.x, y: q.y, width: q.width, height: q.height })) r.setAttribute(k, String(v))
+    r.setAttribute('class', strong ? 'clearance-zone selected' : 'clearance-zone')
+    r.setAttribute('fill', eq.color)
+    r.setAttribute('stroke', eq.color)
+    return [r]
+  }
+
+  // 設備 id の余白への入り込みの相手（「成形機 1 の余白に入る」「取出機 1 が入っている」）
+  function clearancePartners(s: Scene, overlaps: readonly Overlap[], id: string): string[] {
+    const out: string[] = []
+    for (const o of overlaps) {
+      if (o.kind !== 'clearance') continue
+      if (o.equipment === id) out.push(`${equipmentName(s, o.owner)}の余白に入る`)
+      if (o.owner === id) out.push(`${equipmentName(s, o.equipment)}が入っている`)
+    }
+    return out
   }
 
   // 設備 id と重なっている相手の名前（設備、続いて通路）
@@ -434,19 +515,25 @@ export function mountEditor(canvas: Canvas): Editor {
   const OVERLAP_ROWS = 20
   function renderOverlapList(s: Scene, overlaps: readonly Overlap[]) {
     const nEq = overlaps.filter((o) => o.kind === 'equipment').length
-    const nAisle = overlaps.length - nEq
+    const nAisle = overlaps.filter((o) => o.kind === 'aisle').length
+    const nClear = overlaps.length - nEq - nAisle
     overlapInfo.textContent = overlaps.length
-      ? [nEq ? `設備どうし ${nEq} 件` : '', nAisle ? `設備と通路 ${nAisle} 件` : ''].filter(Boolean).join('、')
+      ? [nEq ? `設備どうし ${nEq} 件` : '', nAisle ? `設備と通路 ${nAisle} 件` : '', nClear ? `余白への入り込み ${nClear} 件` : '']
+          .filter(Boolean)
+          .join('、')
       : 'なし'
     overlapInfo.classList.toggle('warn', overlaps.length > 0)
     overlapList.replaceChildren(
       ...overlaps.slice(0, OVERLAP_ROWS).map((o) => {
         const li = document.createElement('li')
-        const ids = o.kind === 'equipment' ? [o.a, o.b] : [o.equipment]
+        const ids = o.kind === 'equipment' ? [o.a, o.b] : o.kind === 'clearance' ? [o.equipment, o.owner] : [o.equipment]
+        if (o.kind === 'clearance') li.className = 'clearance'
         li.textContent =
           o.kind === 'equipment'
             ? `${equipmentName(s, o.a)} と ${equipmentName(s, o.b)}`
-            : `${equipmentName(s, o.equipment)} と ${s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle}`
+            : o.kind === 'clearance'
+              ? `${equipmentName(s, o.equipment)} が ${equipmentName(s, o.owner)} の余白に`
+              : `${equipmentName(s, o.equipment)} と ${s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle}`
         li.title = 'クリックでこの設備を選ぶ'
         li.addEventListener('click', () => {
           const live = ids.filter((id) => scene().equipment.some((e) => e.id === id))

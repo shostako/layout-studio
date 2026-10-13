@@ -4,7 +4,7 @@
 import { checkAisle, type Aisle } from './aisle'
 import { calibrate, checkBackground, type Background } from './background'
 import { checkSite, type Site } from './site'
-import { SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Equipment, type Rotation, type Scene } from './scene'
+import { NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type Rotation, type Scene } from './scene'
 import type { Point } from './viewport'
 
 export type Command =
@@ -13,7 +13,7 @@ export type Command =
   | { type: 'rotate'; ids: string[]; quarterTurns: number } // 各設備の中心のまわりに 90 度 × n 回す。正が時計回り
   | { type: 'remove'; ids: string[] } // 設備を消す
   | { type: 'duplicate'; ids: string[]; newIds: string[]; dx: number; dy: number } // 設備を写して dx, dy ずらして置く。新しい id は呼ぶ側が決め、ids と同じ順に並べる
-  | { type: 'update'; ids: string[]; changes: EquipmentChanges } // 置いた設備の名前・寸法・色を変える。寸法を変えても外接の長方形の左上と回転は動かさない
+  | { type: 'update'; ids: string[]; changes: EquipmentChanges } // 置いた設備の名前・寸法・色・余白を変える。寸法を変えても外接の長方形の左上と回転は動かさない
   | { type: 'setBackground'; background: Background | null } // 背景の画像を置く・差し替える・外す（null）
   | { type: 'calibrateBackground'; a: Point; b: Point; distance: number } // 図面の上の 2 点が distance mm 離れているとして縮尺を合わせる。a は動かない
   | { type: 'moveBackground'; dx: number; dy: number } // 背景をずらす（mm）
@@ -24,7 +24,8 @@ export type Command =
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
 
 // update で変えられる項目。書いたものだけ変える
-export type EquipmentChanges = { name?: string; width?: number; depth?: number; color?: string }
+// clearance は書いた辺だけ変える
+export type EquipmentChanges = { name?: string; width?: number; depth?: number; color?: string; clearance?: Partial<Clearance> }
 
 // updateAisle で変えられる項目。書いたものだけ変える
 export type AisleChanges = { name?: string; width?: number }
@@ -79,8 +80,27 @@ function add(scene: Scene, eq: Equipment): CommandResult {
   if (!(eq.width > 0 && eq.depth > 0 && Number.isFinite(eq.width) && Number.isFinite(eq.depth)))
     return fail('設備の幅と奥行は正の数にしてください')
   if (!ROTATIONS.includes(eq.rotation)) return fail('回転は 0・90・180・270 のどれかです')
+  // 余白を書かなければ 0（AI が余白を書かずに置けるように）
+  const c = eq.clearance === undefined ? NO_CLEARANCE : eq.clearance
+  const badC = checkClearance(c, true)
+  if (badC) return fail(`設備 ${eq.id} の${badC}`)
   const { id, kind, name, x, y, width, depth, rotation, color } = eq
-  return { ok: true, scene: { ...scene, equipment: [...scene.equipment, { id, kind, name, x, y, width, depth, rotation, color }] } }
+  const clearance = { top: c.top, right: c.right, bottom: c.bottom, left: c.left }
+  return { ok: true, scene: { ...scene, equipment: [...scene.equipment, { id, kind, name, x, y, width, depth, rotation, color, clearance }] } }
+}
+
+const SIDES = ['top', 'right', 'bottom', 'left'] as const
+
+// 余白の各辺が 0 以上の数か。all なら 4 辺すべてを求める（update では書いた辺だけ）
+function checkClearance(c: unknown, all: boolean): string | null {
+  if (typeof c !== 'object' || c === null) return '余白（clearance）の形ではありません'
+  const r = c as Record<string, unknown>
+  for (const k of SIDES) {
+    const v = r[k]
+    if (v === undefined && !all) continue
+    if (!(typeof v === 'number' && v >= 0 && Number.isFinite(v))) return '余白は上・右・下・左とも 0 以上の数にしてください'
+  }
+  return null
 }
 
 // ids がすべて存在し、重複がないことを確かめる
@@ -140,13 +160,19 @@ function update(scene: Scene, ids: string[], changes: EquipmentChanges): Command
   const bad = checkIds(scene, ids)
   if (bad) return fail(bad)
   if (typeof changes !== 'object' || changes === null) return fail('変える項目がありません')
-  const { name, width, depth, color } = changes
-  if (name === undefined && width === undefined && depth === undefined && color === undefined) return fail('変える項目がありません')
+  const { name, width, depth, color, clearance } = changes
+  if (name === undefined && width === undefined && depth === undefined && color === undefined && clearance === undefined)
+    return fail('変える項目がありません')
   if (name !== undefined && (typeof name !== 'string' || !name.trim())) return fail('名前を入れてください')
   for (const v of [width, depth])
     if (v !== undefined && !(typeof v === 'number' && v > 0 && Number.isFinite(v))) return fail('設備の幅と奥行は正の数にしてください')
   if (color !== undefined && (typeof color !== 'string' || !COLOR.test(color))) return fail('色は #rrggbb の形で書いてください')
-  const set: EquipmentChanges = {}
+  if (clearance !== undefined) {
+    const badC = checkClearance(clearance, false)
+    if (badC) return fail(badC)
+    if (!SIDES.some((k) => clearance[k] !== undefined)) return fail('変える余白の辺がありません')
+  }
+  const set: Omit<EquipmentChanges, 'clearance'> = {}
   if (name !== undefined) set.name = name.trim()
   if (width !== undefined) set.width = width
   if (depth !== undefined) set.depth = depth
@@ -156,6 +182,11 @@ function update(scene: Scene, ids: string[], changes: EquipmentChanges): Command
     ok: true,
     scene: updateEach(scene, ids, (e) => {
       const next = { ...e, ...set }
+      if (clearance !== undefined) {
+        const c = { ...e.clearance }
+        for (const k of SIDES) if (clearance[k] !== undefined) c[k] = clearance[k]
+        next.clearance = c
+      }
       const a = footprint(e)
       const b = footprint(next)
       return { ...next, x: e.x + (a.x - b.x), y: e.y + (a.y - b.y) }

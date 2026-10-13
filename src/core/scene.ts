@@ -4,10 +4,15 @@ import type { Aisle } from './aisle'
 import type { Background } from './background'
 import type { Site } from './site'
 
-// 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）を足した
-export const SCENE_VERSION = 3
+// 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）を足した
+export const SCENE_VERSION = 4
 
 export type Rotation = 0 | 90 | 180 | 270
+
+// 保守用の余白（mm）。回転 0 のときの上・右・下・左の辺から外へ取る幅。設備と一緒に回る
+export type Clearance = { top: number; right: number; bottom: number; left: number }
+
+export const NO_CLEARANCE: Clearance = { top: 0, right: 0, bottom: 0, left: 0 }
 
 export type Equipment = {
   id: string
@@ -20,6 +25,7 @@ export type Equipment = {
   depth: number // 回転 0 のときの y 方向の長さ
   rotation: Rotation // 時計回り（画面の見た目で）
   color: string
+  clearance: Clearance
 }
 
 export type Scene = {
@@ -40,6 +46,22 @@ export function footprint(eq: Equipment): { x: number; y: number; width: number;
   const width = turned ? eq.depth : eq.width
   const height = turned ? eq.width : eq.depth
   return { x: eq.x - width / 2, y: eq.y - height / 2, width, height }
+}
+
+// 余白を図面の向き（回転を考えた上・右・下・左）にしたもの。時計回りに 90 度回すと、上の余白が右へ移る
+export function worldClearance(eq: Equipment): Clearance {
+  const c = eq.clearance
+  const sides = [c.top, c.right, c.bottom, c.left]
+  const k = eq.rotation / 90
+  const at = (i: number) => sides[(i - k + 4) % 4]!
+  return { top: at(0), right: at(1), bottom: at(2), left: at(3) }
+}
+
+// 余白まで含めた長方形（外接の長方形を余白の幅だけ広げたもの）
+export function clearanceRect(eq: Equipment): { x: number; y: number; width: number; height: number } {
+  const f = footprint(eq)
+  const c = worldClearance(eq)
+  return { x: f.x - c.left, y: f.y - c.top, width: f.width + c.left + c.right, height: f.height + c.top + c.bottom }
 }
 
 // まだ使われていない設備の id を返す（'eq-1', 'eq-2', ...）。コマンドは id を受け取る側にし、純関数のままにする

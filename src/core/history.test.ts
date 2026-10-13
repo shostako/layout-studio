@@ -4,7 +4,7 @@ import { HISTORY_LIMIT, canRedo, canUndo, createHistory, execute, redo, undo, ty
 import { createEmptyScene, type Equipment } from './scene'
 
 function eq(id: string): Equipment {
-  return { id, kind: 'weigher', name: id, x: 0, y: 0, width: 800, depth: 600, rotation: 0, color: '#888' }
+  return { id, kind: 'weigher', name: id, x: 0, y: 0, width: 800, depth: 600, rotation: 0, color: '#888', clearance: { top: 0, right: 0, bottom: 0, left: 0 } }
 }
 
 function run(h: History, cmd: Command): History {

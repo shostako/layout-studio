@@ -45,3 +45,12 @@ describe('nextEquipmentName', () => {
     expect(nextEquipmentName(createEmptyScene(), molding)).toBe('成形機 1')
   })
 })
+
+describe('ひな形の余白', () => {
+  it('どのひな形も 0 以上の余白を持ち、置く設備に写す（ひな形と同じものを共有しない）', () => {
+    for (const t of TEMPLATES) for (const v of Object.values(t.clearance)) expect(v >= 0).toBe(true)
+    const a = equipmentFromTemplate(molding, { id: 'eq-1', name: '成形機 1', center: { x: 0, y: 0 } })
+    expect(a.clearance).toEqual(molding.clearance)
+    expect(a.clearance).not.toBe(molding.clearance)
+  })
+})
