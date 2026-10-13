@@ -15,8 +15,29 @@ const DRAG_THRESHOLD_PX = 3
 // スナップしないときの矢印キー 1 回の移動量
 const NUDGE_NO_SNAP = 10
 
+// 背景の縮尺合わせなど、左クリックで図面の点を拾う道具。editor が左クリックと Esc を渡す
+export type Tool = {
+  pointerDown(at: Point, e: PointerEvent): void
+  // world の層に重ねて描くもの（カーソルの位置を受け取る）
+  overlay(pointer: Point | null): SVGElement[]
+  // 道具が使われなくなったとき（Esc、別の操作を始めた、endTool）に呼ぶ
+  ended(): void
+}
+
+// 他の画面の部品（背景の欄など）が、同じ履歴にコマンドを通すための口
+export type Editor = {
+  run(cmd: Command): boolean
+  scene(): Scene
+  startTool(tool: Tool): void
+  endTool(tool: Tool): void
+  render(): void
+  // シーンや表示が変わって描き直すたびに呼ぶ
+  onRender(listener: () => void): void
+}
+
 type Mode =
   | { type: 'idle' }
+  | { type: 'tool'; tool: Tool }
   | { type: 'placing'; template: EquipmentTemplate; width: number; depth: number; rotation: Rotation }
   | {
       type: 'dragging'
@@ -32,7 +53,7 @@ type Mode =
 
 const turn = (r: Rotation, q: number): Rotation => ((((r / 90 + q) % 4) + 4) % 4) * 90 as Rotation
 
-export function mountEditor(canvas: Canvas): void {
+export function mountEditor(canvas: Canvas): Editor {
   let history: History = createHistory(createEmptyScene())
   let selected: string[] = []
   let mode: Mode = { type: 'idle' }
@@ -44,7 +65,17 @@ export function mountEditor(canvas: Canvas): void {
 
   const layer = document.createElementNS(SVG_NS, 'g')
   layer.setAttribute('class', 'equipment-layer')
-  canvas.world.append(layer)
+  const toolLayer = document.createElementNS(SVG_NS, 'g')
+  toolLayer.setAttribute('class', 'tool-layer')
+  canvas.world.append(layer, toolLayer)
+  const listeners: (() => void)[] = []
+
+  // 今の操作をやめて別の操作に移る。道具を使っていたら知らせる
+  const setMode = (next: Mode) => {
+    const prev = mode
+    mode = next
+    if (prev.type === 'tool' && !(next.type === 'tool' && next.tool === prev.tool)) prev.tool.ended()
+  }
 
   // ---- コマンドを通す ----
   const run = (cmd: Command): boolean => {
@@ -83,12 +114,12 @@ export function mountEditor(canvas: Canvas): void {
   }
   const startPlacing = (t: EquipmentTemplate) => {
     const size = sizes.get(t.kind)!
-    mode = { type: 'placing', template: t, width: size.width, depth: size.depth, rotation: 0 }
+    setMode({ type: 'placing', template: t, width: size.width, depth: size.depth, rotation: 0 })
     selected = []
     render()
   }
   const cancel = () => {
-    mode = { type: 'idle' }
+    setMode({ type: 'idle' })
     render()
   }
 
@@ -241,6 +272,8 @@ export function mountEditor(canvas: Canvas): void {
       ...shown.equipment.map((eq) => drawEquipment(eq, sel.has(eq.id) ? 'equipment selected' : 'equipment')),
     )
     if (mode.type === 'placing' && pointer) layer.append(drawEquipment(ghost(mode, pointer), 'equipment ghost'))
+    toolLayer.replaceChildren(...(mode.type === 'tool' ? mode.tool.overlay(pointer) : []))
+    canvas.svg.classList.toggle('picking', mode.type === 'tool')
 
     canvas.svg.classList.toggle('placing', mode.type === 'placing')
     for (const [kind, b] of templateButtons)
@@ -262,6 +295,7 @@ export function mountEditor(canvas: Canvas): void {
     undoBtn.disabled = !canUndo(history)
     redoBtn.disabled = !canRedo(history)
     msg.textContent = message
+    for (const f of listeners) f()
   }
 
   const ghost = (m: Extract<Mode, { type: 'placing' }>, at: Point): Equipment =>
@@ -280,6 +314,11 @@ export function mountEditor(canvas: Canvas): void {
     if (e.button !== 0 || canvas.isPanKeyDown()) return
     const at = canvas.toWorld(e.clientX, e.clientY)
     pointer = at
+    if (mode.type === 'tool') {
+      mode.tool.pointerDown(at, e)
+      render()
+      return
+    }
     if (mode.type === 'placing') {
       const m = mode
       const eq = { ...ghost(m, at), id: nextEquipmentId(scene()), name: nextEquipmentName(scene(), m.template) }
@@ -330,7 +369,7 @@ export function mountEditor(canvas: Canvas): void {
       mode = { ...mode, dx: d.dx, dy: d.dy, moved: true }
       svgEl.classList.add('dragging')
       render()
-    } else if (mode.type === 'placing') {
+    } else if (mode.type === 'placing' || mode.type === 'tool') {
       render()
     }
   })
@@ -346,7 +385,7 @@ export function mountEditor(canvas: Canvas): void {
   svgEl.addEventListener('pointerup', (e) => endDrag(e, true))
   svgEl.addEventListener('pointercancel', (e) => endDrag(e, false))
   svgEl.addEventListener('pointerleave', () => {
-    if (mode.type === 'placing') {
+    if (mode.type === 'placing' || mode.type === 'tool') {
       pointer = null
       render()
     }
@@ -367,6 +406,12 @@ export function mountEditor(canvas: Canvas): void {
       return
     }
     if (e.altKey || mod) return
+    if (mode.type === 'tool') {
+      if (e.key !== 'Escape') return
+      cancel()
+      e.preventDefault()
+      return
+    }
     if (e.key === 'r' || e.key === 'R') {
       const q = e.shiftKey ? -1 : 1
       if (mode.type === 'placing') {
@@ -396,4 +441,19 @@ export function mountEditor(canvas: Canvas): void {
   })
 
   render()
+  return {
+    run,
+    scene,
+    startTool: (tool) => {
+      setMode({ type: 'tool', tool })
+      selected = []
+      message = ''
+      render()
+    },
+    endTool: (tool) => {
+      if (mode.type === 'tool' && mode.tool === tool) cancel()
+    },
+    render,
+    onRender: (f) => listeners.push(f),
+  }
 }
