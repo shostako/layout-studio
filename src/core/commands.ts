@@ -340,7 +340,7 @@ function unlink(scene: Scene, links: Link[]): CommandResult {
 
 const FLOW_KEYS = Object.keys(FLOW_LIMITS) as (keyof FlowSettings)[]
 
-// 流れの再生の数値が範囲に入っているか。all なら 4 つすべてを求める（setFlow では書いたものだけ）
+// 流れの再生の数値が範囲に入っているか。all ならすべてを求める（setFlow では書いたものだけ）
 function checkFlow(f: unknown, all: boolean): string | null {
   if (typeof f !== 'object' || f === null) return '流れの再生の数値（flow）の形ではありません'
   const r = f as Record<string, unknown>
@@ -409,8 +409,13 @@ function loadScene(next: Scene): CommandResult {
     r = link(r.scene, next.links)
     if (!r.ok) return r
   }
-  // 流れの数値を書かなければ架空の目安（AI が数値を書かずにシーンを作れるように）
-  const f = next.flow === undefined ? DEFAULT_FLOW_SETTINGS : next.flow
+  // 流れの数値を書かなければ架空の目安（AI が数値を書かずにシーンを作れるように）。書かなかった項目も目安で埋める
+  const f =
+    next.flow === undefined
+      ? DEFAULT_FLOW_SETTINGS
+      : typeof next.flow === 'object' && next.flow !== null
+        ? { ...DEFAULT_FLOW_SETTINGS, ...next.flow }
+        : next.flow
   const badF = checkFlow(f, true)
   if (badF) return fail(badF)
   const flow = Object.fromEntries(FLOW_KEYS.map((k) => [k, f[k]])) as FlowSettings

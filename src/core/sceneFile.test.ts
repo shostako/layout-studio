@@ -111,3 +111,17 @@ describe('版 3 からの変換', () => {
     expect(parsed(serializeScene(s))).toEqual(s)
   })
 })
+
+describe('版 7 からの変換', () => {
+  it('版 7 のファイルは、AGV を 1 台として読む', () => {
+    const flow = { cycleTime: 20, stockerCapacity: 60, agvSpeed: 1500, agvHandlingTime: 30 }
+    const s = parsed(JSON.stringify({ version: 7, background: null, site: null, equipment: [], aisles: [], links: [], flow }))
+    expect(s.version).toBe(SCENE_VERSION)
+    expect(s.flow).toEqual({ ...flow, agvCount: 1 })
+  })
+
+  it('AGV の台数は保存して読み直しても同じ', () => {
+    const s = { ...createEmptyScene(), flow: { ...createEmptyScene().flow, agvCount: 3 } }
+    expect(parsed(serializeScene(s))).toEqual(s)
+  })
+})

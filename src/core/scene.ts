@@ -7,7 +7,7 @@ import type { Site } from './site'
 
 // 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）、
 // 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）、版 7 で通路の一方通行（oneWay）を足した
-export const SCENE_VERSION = 7
+export const SCENE_VERSION = 8
 
 export type Rotation = 0 | 90 | 180 | 270
 
@@ -20,6 +20,7 @@ export type FlowSettings = {
   stockerCapacity: number // ストッカー 1 台に入る数（満杯の数）
   agvSpeed: number // AGV の速さ（mm/秒）
   agvHandlingTime: number // AGV がストッカーで台車を替える時間（秒）
+  agvCount: number // AGV の台数
 }
 
 // 最初の値は架空の目安
@@ -28,6 +29,7 @@ export const DEFAULT_FLOW_SETTINGS: FlowSettings = {
   stockerCapacity: 20,
   agvSpeed: 1000,
   agvHandlingTime: 30,
+  agvCount: 1,
 }
 
 // 受け付ける範囲（下限と上限を含む）。サイクルの下限は、再生の刻み（0.25 秒）で数え落とさず、
@@ -37,6 +39,7 @@ export const FLOW_LIMITS: Record<keyof FlowSettings, { min: number; max: number;
   stockerCapacity: { min: 1, max: 10000, integer: true, label: 'ストッカーの容量（個）' },
   agvSpeed: { min: 10, max: 10000, label: 'AGV の速さ（mm/秒）' },
   agvHandlingTime: { min: 0, max: 3600, label: '台車の入れ替えの時間（秒）' },
+  agvCount: { min: 1, max: 20, integer: true, label: 'AGV の台数' },
 }
 
 export const NO_CLEARANCE: Clearance = { top: 0, right: 0, bottom: 0, left: 0 }

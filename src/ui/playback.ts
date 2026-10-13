@@ -1,6 +1,6 @@
 // 流れの再生: 左の欄の「流れの再生」で再生・一時停止・最初から・速さ。成形品の移動、ストッカーの溜まり具合、AGV を図面に重ねて描く。
 // 計算は src/core/playback.ts の純関数。再生の状態は画面の状態で、シーンにも履歴にも入れない。
-// サイクル・容量・AGV の速さ・入れ替えの時間はシーンの flow で、欄で変えると setFlow のコマンドを出す（元に戻せる、案ごとに保存）。
+// サイクル・容量・AGV の速さ・入れ替えの時間・AGV の台数はシーンの flow で、欄で変えると setFlow のコマンドを出す（元に戻せる、案ごとに保存）。
 // シーンが変わったら（配置や数値を変えた、案を切り替えた）、筋書きを作り直して最初から再生する。
 import type { Canvas } from './canvas'
 import type { Editor } from './editor'
@@ -9,10 +9,12 @@ import {
   flowView,
   formatClock,
   initialFlow,
+  agvUtilization,
   prepareFlow,
   stepFlow,
   type FlowModel,
   type FlowParams,
+  type AgvState,
   type FlowState,
 } from '../core/playback'
 import { FLOW_LIMITS, footprint, type FlowSettings, type Scene } from '../core/scene'
@@ -42,7 +44,7 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
   let scene: Scene = editor.scene()
   let params: FlowParams = flowParams(scene.flow)
   let model: FlowModel = prepareFlow(scene)
-  let state: FlowState = initialFlow(model)
+  let state: FlowState = initialFlow(model, params)
   let playing = false
   let speed = DEFAULT_SPEED
   let frame = 0
@@ -85,6 +87,7 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     { key: 'stockerCapacity', label: '容量 個', scale: 1, step: 1, title: 'ストッカー 1 台に入る数。この数で満杯になり AGV を呼ぶ' },
     { key: 'agvSpeed', label: 'AGV m/秒', scale: 1000, step: 0.1, title: 'AGV が通路を走る速さ（m/秒）' },
     { key: 'agvHandlingTime', label: '入れ替え 秒', scale: 1, step: 5, title: 'AGV がストッカーで満杯の台車を空の台車と替える時間（秒）' },
+    { key: 'agvCount', label: 'AGV 台', scale: 1, step: 1, title: 'AGV の台数。空いている AGV が呼ばれた順にストッカーへ行く（AGV どうしはぶつからない扱い）' },
   ]
   const props = document.createElement('div')
   props.className = 'props playback-params'
@@ -148,7 +151,7 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     paint()
   }
   const restart = () => {
-    state = initialFlow(model)
+    state = initialFlow(model, params)
     paint()
   }
 
@@ -159,7 +162,7 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     scene = s
     params = flowParams(scene.flow)
     model = prepareFlow(scene)
-    state = initialFlow(model)
+    state = initialFlow(model, params)
     showParams()
     paint()
   }
@@ -187,8 +190,7 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     resetBtn.disabled = state.time === 0
     warn.textContent = model.warnings.join('。')
     const held = Object.values(state.held).reduce((a, b) => a + b, 0)
-    const agv = state.agv
-    const agvText =
+    const agvText = (agv: AgvState) =>
       agv.phase === 'idle'
         ? state.requests.length
           ? '出入り口で止まっている（通路がつながらない）'
@@ -198,12 +200,19 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
           : agv.phase === 'loading'
             ? `${name(agv.stocker)}で台車を入れ替え`
             : `${name(agv.stocker)}の台車を運び出し中`
+    const use = agvUtilization(state)
+    const many = state.agvs.length > 1
     const lines = [
       `経過 ${formatClock(state.time)}　成形 ${state.produced} 個　運び出し ${state.carts} 台車` + (held ? `　待ち ${held} 個` : ''),
-      ...(model.home ? [`AGV: ${agvText}`] : []),
+      ...(model.home
+        ? state.agvs.map(
+            (a, i) => `AGV${many ? ` ${i + 1}` : ''}: ${agvText(a)}` + (state.time > 0 ? `（稼働 ${Math.round(use[i]! * 100)}%）` : ''),
+          )
+        : []),
       ...model.stockers.map((id) => {
         const s = state.stockers[id]!
-        const how = s.full ? (agv.phase !== 'idle' && agv.stocker === id ? '入れ替え待ち' : '満杯・AGV 待ち') : ''
+        const coming = state.agvs.some((a) => a.phase !== 'idle' && a.stocker === id)
+        const how = s.full ? (coming ? '入れ替え待ち' : '満杯・AGV 待ち') : ''
         return `${name(id)}: ${s.count} / ${params.stockerCapacity}${how ? `（${how}）` : ''}`
       }),
     ]
@@ -259,13 +268,13 @@ export function mountPlayback(canvas: Canvas, editor: Editor): void {
     }
     const view = flowView(model, state)
     for (const p of view.parts) out.push(svg('circle', { class: 'flow-part', cx: p.x, cy: p.y, r: PART_R }))
-    if (view.agv) {
-      const deg = (view.agv.angle * 180) / Math.PI
-      const g = svg('g', { class: `agv${view.agv.loaded ? ' loaded' : ''}`, transform: `translate(${view.agv.at.x} ${view.agv.at.y}) rotate(${deg})` })
+    for (const agv of view.agvs) {
+      const deg = (agv.angle * 180) / Math.PI
+      const g = svg('g', { class: `agv${agv.loaded ? ' loaded' : ''}`, transform: `translate(${agv.at.x} ${agv.at.y}) rotate(${deg})` })
       g.append(svg('rect', { class: 'agv-body', x: -AGV_L / 2, y: -AGV_W / 2, width: AGV_L, height: AGV_W, rx: 150 }))
       // 進む向きの印
       g.append(svg('polygon', { class: 'agv-nose', points: `${AGV_L / 2 - 50},0 ${AGV_L / 2 - 350},${-AGV_W / 2 + 150} ${AGV_L / 2 - 350},${AGV_W / 2 - 150}` }))
-      if (view.agv.loaded) g.append(svg('rect', { class: 'agv-cart', x: -AGV_L / 2 + 150, y: -AGV_W / 2 + 120, width: AGV_L - 550, height: AGV_W - 240 }))
+      if (agv.loaded) g.append(svg('rect', { class: 'agv-cart', x: -AGV_L / 2 + 150, y: -AGV_W / 2 + 120, width: AGV_L - 550, height: AGV_W - 240 }))
       out.push(g)
     }
     layer.replaceChildren(...out)

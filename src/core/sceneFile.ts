@@ -29,6 +29,8 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
   5: (d) => ({ ...d, flow: { ...DEFAULT_FLOW_SETTINGS } }),
   // 版 7 で通路の一方通行（oneWay）を足した。版 6 の通路はどれも両方向なので、そのまま読む
   6: (d) => d,
+  // 版 8 で AGV の台数（flow.agvCount）を足した。それまでは 1 台
+  7: (d) => ({ ...d, flow: { ...(d.flow as object), agvCount: 1 } }),
 }
 
 export function serializeScene(scene: Scene): string {

@@ -3,7 +3,7 @@ import type { Aisle } from './aisle'
 import type { Link } from './flow'
 import { applyCommand } from './commands'
 import { createHistory, execute, undo } from './history'
-import { DEFAULT_FLOW_PARAMS, flowParams, flowView, formatClock, initialFlow, prepareFlow, stepFlow, type FlowParams } from './playback'
+import { DEFAULT_FLOW_PARAMS, agvUtilization, flowParams, flowView, formatClock, initialFlow, prepareFlow, stepFlow, type FlowParams } from './playback'
 import { DEFAULT_FLOW_SETTINGS, createEmptyScene, type Equipment, type Scene } from './scene'
 import { parseScene, serializeScene } from './sceneFile'
 
@@ -26,7 +26,7 @@ function cell(links?: Link[], aisles?: Aisle[]): Scene {
 }
 
 // 計算しやすい値: 1 秒に 1 個、ストッカーは 3 個で満杯、移る速さ・AGV は十分速い
-const P: FlowParams = { cycleTime: 1, stockerCapacity: 3, agvSpeed: 1000, agvHandlingTime: 2, transferSpeed: 1e9 }
+const P: FlowParams = { cycleTime: 1, stockerCapacity: 3, agvSpeed: 1000, agvHandlingTime: 2, agvCount: 1, transferSpeed: 1e9 }
 
 const run = (scene: Scene, seconds: number, params = P) => {
   const model = prepareFlow(scene)
@@ -87,8 +87,8 @@ describe('一方通行の通路', () => {
     const m = prepareFlow(cell(undefined, [loop]))
     // 3 秒で s1 が満杯 → 行き 4 秒 → 積み替え 2 秒 → 帰り 22 秒
     let st = stepFlow(m, { ...P, stockerCapacity: 3 }, initialFlow(m), 3 + 4 + 2 + 1)
-    expect(st.agv.phase).toBe('returning')
-    const v = flowView(m, st).agv!
+    expect(st.agvs[0]!.phase).toBe('returning')
+    const v = flowView(m, st).agvs[0]!
     expect(v.loaded).toBe(true)
     expect(v.angle).toBeCloseTo(0)
     st = stepFlow(m, P, st, 22)
@@ -100,7 +100,7 @@ describe('一方通行の通路', () => {
     const { model, state } = run(cell(undefined, [one]), 20)
     expect(model.returns.s1).toBeNull()
     expect(model.warnings).toContain('s1 から AGV の出入り口へ帰る通路がありません（一方通行の向きを確かめてください）')
-    expect(state.agv.phase).toBe('idle')
+    expect(state.agvs[0]!.phase).toBe('idle')
     expect(state.carts).toBe(0)
   })
 })
@@ -146,19 +146,19 @@ describe('stepFlow', () => {
     // 3 秒目に s1 が満杯 → AGV は 4000 mm を 4 秒で行き、2 秒で替え、4 秒で戻る
     const model = prepareFlow(cell())
     let s = stepFlow(model, P, initialFlow(model), 3.1)
-    expect(s.agv).toMatchObject({ phase: 'going', stocker: 's1' })
+    expect(s.agvs[0]).toMatchObject({ phase: 'going', stocker: 's1' })
     s = stepFlow(model, P, s, 4.1) // 7.2 秒
-    expect(s.agv).toMatchObject({ phase: 'loading', stocker: 's1' })
-    expect(flowView(model, s).agv!.at).toEqual({ x: 4000, y: 3000 })
+    expect(s.agvs[0]).toMatchObject({ phase: 'loading', stocker: 's1' })
+    expect(flowView(model, s).agvs[0]!.at).toEqual({ x: 4000, y: 3000 })
     s = stepFlow(model, P, s, 2) // 9.2 秒: 替え終わって戻る途中
-    expect(s.agv.phase).toBe('returning')
+    expect(s.agvs[0]!.phase).toBe('returning')
     expect(s.stockers.s1).toMatchObject({ count: 0, full: false })
     const v = flowView(model, s)
-    expect(v.agv!.loaded).toBe(true)
-    expect(v.agv!.at.x).toBeLessThan(4000)
+    expect(v.agvs[0]!.loaded).toBe(true)
+    expect(v.agvs[0]!.at.x).toBeLessThan(4000)
     s = stepFlow(model, P, s, 4) // 13.2 秒: 出入り口に着いた。6 秒目に満杯になった s2 へ続けて向かう
     expect(s.carts).toBe(1)
-    expect(s.agv).toMatchObject({ phase: 'going', stocker: 's2' })
+    expect(s.agvs[0]).toMatchObject({ phase: 'going', stocker: 's2' })
   })
 
   it('どこも受けられなければ、手前の設備で待たせ、空いたら送る', () => {
@@ -183,6 +183,37 @@ describe('stepFlow', () => {
     expect(s.requests).toEqual(['s2', 's1'])
   })
 
+  it('AGV が 2 台なら、2 か所の呼び出しに同時に向かい、稼働率を数える', () => {
+    const slow: FlowParams = { ...P, agvSpeed: 400, agvCount: 2 } // 片道 10 秒
+    const model = prepareFlow(cell())
+    let s = stepFlow(model, slow, initialFlow(model, slow), 6.5)
+    // 3 秒で s1、6 秒で s2 が満杯。1 台目は s1、2 台目は s2 へ
+    expect(s.agvs).toHaveLength(2)
+    expect(s.agvs[0]).toMatchObject({ phase: 'going', stocker: 's1' })
+    expect(s.agvs[1]).toMatchObject({ phase: 'going', stocker: 's2' })
+    expect(s.requests).toEqual([])
+    expect(flowView(model, s).agvs).toHaveLength(2)
+    // 1 台目は 3 秒から動き、2 台目は 6 秒から動いた
+    const [u1, u2] = agvUtilization(s)
+    expect(u1).toBeCloseTo(3.5 / 6.5, 5)
+    expect(u2).toBeCloseTo(0.5 / 6.5, 5)
+  })
+
+  it('AGV 1 台と 2 台で、満杯で待つ時間が変わる', () => {
+    const slow: FlowParams = { ...P, agvSpeed: 400 }
+    const model = prepareFlow(cell())
+    // s1 は片道 10 秒、s2 は片道 15 秒。1 台なら s1 から戻る 25 秒まで s2 は待ち、2 台なら 6 秒から s2 へ向かい 38 秒で戻る
+    const one = stepFlow(model, slow, initialFlow(model, slow), 45)
+    const two = stepFlow(model, { ...slow, agvCount: 2 }, initialFlow(model, { ...slow, agvCount: 2 }), 45)
+    expect(one.carts).toBe(1)
+    expect(two.carts).toBeGreaterThanOrEqual(2)
+  })
+
+  it('時刻 0 の稼働率は 0', () => {
+    const model = prepareFlow(cell())
+    expect(agvUtilization(initialFlow(model, { ...P, agvCount: 3 }))).toEqual([0, 0, 0])
+  })
+
   it('次の工程の無い設備（ストッカー以外）に着いたら終わり', () => {
     const { state } = run(cell([{ from: 'm', to: 'w' }]), 3.5)
     expect(state.finished).toBe(3)
@@ -194,7 +225,7 @@ describe('stepFlow', () => {
     const inStock = s.stockers.s1!.count + s.stockers.s2!.count + s.stockers.s1!.incoming + s.stockers.s2!.incoming
     const held = Object.values(s.held).reduce((a, b) => a + b, 0)
     const moving = s.parts.filter((p) => !p.to.startsWith('s')).length
-    const loading = s.agv.phase === 'returning' ? DEFAULT_FLOW_PARAMS.stockerCapacity : 0
+    const loading = s.agvs[0]!.phase === 'returning' ? DEFAULT_FLOW_PARAMS.stockerCapacity : 0
     expect(s.produced).toBe(120)
     expect(s.carts * DEFAULT_FLOW_PARAMS.stockerCapacity + loading + inStock + held + moving).toBe(s.produced)
   })
@@ -236,8 +267,16 @@ describe('流れの再生の数値（シーンの flow と setFlow）', () => {
     expect(set({ agvSpeed: -1 })).toMatch('AGV の速さ')
     expect(set({ agvHandlingTime: Number.NaN })).toMatch('入れ替え')
     expect(set({ cycleTime: '30' })).toMatch('サイクル時間')
+    expect(set({ agvCount: 0 })).toMatch('AGV の台数')
+    expect(set({ agvCount: 1.5 })).toMatch('整数')
+    expect(set({ agvCount: 21 })).toMatch('20 以下')
     expect(set({})).toMatch('ありません')
     expect(ok(applyCommand(s, { type: 'setFlow', changes: { agvHandlingTime: 0 } })).flow.agvHandlingTime).toBe(0)
+  })
+
+  it('loadScene で flow の一部しか書かなければ、残りは架空の目安で埋める', () => {
+    const t = ok(applyCommand(createEmptyScene(), { type: 'loadScene', scene: { ...createEmptyScene(), flow: { cycleTime: 20 } } } as never))
+    expect(t.flow).toEqual({ ...DEFAULT_FLOW_SETTINGS, cycleTime: 20 })
   })
 
   it('元に戻すで前の数値に戻る', () => {
