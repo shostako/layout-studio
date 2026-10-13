@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1400" viewBox="0 0 2000 1400" font-family="sans-serif">
+<rect width="2000" height="1400" fill="#fff"/>
+<g stroke="#999" stroke-width="1" stroke-dasharray="12 4 2 4">
+<line x1="100" y1="130" x2="100" y2="1370"/>
+<line x1="400" y1="130" x2="400" y2="1370"/>
+<line x1="700" y1="130" x2="700" y2="1370"/>
+<line x1="1000" y1="130" x2="1000" y2="1370"/>
+<line x1="1300" y1="130" x2="1300" y2="1370"/>
+<line x1="1600" y1="130" x2="1600" y2="1370"/>
+<line x1="1900" y1="130" x2="1900" y2="1370"/>
+<line x1="80" y1="150" x2="1920" y2="150"/>
+<line x1="80" y1="450" x2="1920" y2="450"/>
+<line x1="80" y1="750" x2="1920" y2="750"/>
+<line x1="80" y1="1050" x2="1920" y2="1050"/>
+<line x1="80" y1="1350" x2="1920" y2="1350"/>
+</g>
+<g fill="#333">
+<rect x="95.0" y="145.0" width="1810" height="10"/>
+<rect x="95.0" y="145.0" width="10" height="1210"/>
+<rect x="1895.0" y="145.0" width="10" height="1210"/>
+<rect x="95.0" y="1345.0" width="1205.0" height="10"/>
+<rect x="1500" y="1345.0" width="405.0" height="10"/>
+</g>
+<line x1="1300" y1="1362" x2="1500" y2="1362" stroke="#333" stroke-width="2" stroke-dasharray="8 4"/>
+<text x="1400.0" y="1386" font-size="18" text-anchor="middle" fill="#333">シャッター 4000</text>
+<g fill="#555">
+<rect x="85" y="135" width="30" height="30"/>
+<rect x="85" y="435" width="30" height="30"/>
+<rect x="85" y="735" width="30" height="30"/>
+<rect x="85" y="1035" width="30" height="30"/>
+<rect x="85" y="1335" width="30" height="30"/>
+<rect x="385" y="135" width="30" height="30"/>
+<rect x="385" y="435" width="30" height="30"/>
+<rect x="385" y="735" width="30" height="30"/>
+<rect x="385" y="1035" width="30" height="30"/>
+<rect x="385" y="1335" width="30" height="30"/>
+<rect x="685" y="135" width="30" height="30"/>
+<rect x="685" y="435" width="30" height="30"/>
+<rect x="685" y="735" width="30" height="30"/>
+<rect x="685" y="1035" width="30" height="30"/>
+<rect x="685" y="1335" width="30" height="30"/>
+<rect x="985" y="135" width="30" height="30"/>
+<rect x="985" y="435" width="30" height="30"/>
+<rect x="985" y="735" width="30" height="30"/>
+<rect x="985" y="1035" width="30" height="30"/>
+<rect x="985" y="1335" width="30" height="30"/>
+<rect x="1285" y="135" width="30" height="30"/>
+<rect x="1285" y="435" width="30" height="30"/>
+<rect x="1285" y="735" width="30" height="30"/>
+<rect x="1285" y="1035" width="30" height="30"/>
+<rect x="1285" y="1335" width="30" height="30"/>
+<rect x="1585" y="135" width="30" height="30"/>
+<rect x="1585" y="435" width="30" height="30"/>
+<rect x="1585" y="735" width="30" height="30"/>
+<rect x="1585" y="1035" width="30" height="30"/>
+<rect x="1585" y="1335" width="30" height="30"/>
+<rect x="1885" y="135" width="30" height="30"/>
+<rect x="1885" y="435" width="30" height="30"/>
+<rect x="1885" y="735" width="30" height="30"/>
+<rect x="1885" y="1035" width="30" height="30"/>
+<rect x="1885" y="1335" width="30" height="30"/>
+</g>
+<g fill="none" stroke="#333" stroke-width="5"><path d="M550 150 V450 H100 M550 450 H100"/></g>
+<rect x="400" y="447" width="60" height="6" fill="#fff"/>
+<text x="325" y="310" font-size="22" text-anchor="middle" fill="#333">事務所</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="100" y1="70" x2="1900" y2="70"/><line x1="100" y1="60" x2="100" y2="80"/><line x1="1900" y1="60" x2="1900" y2="80"/></g>
+<text x="1000.0" y="62" font-size="22" text-anchor="middle" fill="#c0392b">36000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="100" y1="115" x2="400" y2="115"/><line x1="100" y1="105" x2="100" y2="125"/><line x1="400" y1="105" x2="400" y2="125"/></g>
+<text x="250.0" y="107" font-size="18" text-anchor="middle" fill="#c0392b">6000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="400" y1="115" x2="700" y2="115"/><line x1="400" y1="105" x2="400" y2="125"/><line x1="700" y1="105" x2="700" y2="125"/></g>
+<text x="550.0" y="107" font-size="18" text-anchor="middle" fill="#c0392b">6000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="700" y1="115" x2="1000" y2="115"/><line x1="700" y1="105" x2="700" y2="125"/><line x1="1000" y1="105" x2="1000" y2="125"/></g>
+<text x="850.0" y="107" font-size="18" text-anchor="middle" fill="#c0392b">6000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="1000" y1="115" x2="1300" y2="115"/><line x1="1000" y1="105" x2="1000" y2="125"/><line x1="1300" y1="105" x2="1300" y2="125"/></g>
+<text x="1150.0" y="107" font-size="18" text-anchor="middle" fill="#c0392b">6000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="1300" y1="115" x2="1600" y2="115"/><line x1="1300" y1="105" x2="1300" y2="125"/><line x1="1600" y1="105" x2="1600" y2="125"/></g>
+<text x="1450.0" y="107" font-size="18" text-anchor="middle" fill="#c0392b">6000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="1600" y1="115" x2="1900" y2="115"/><line x1="1600" y1="105" x2="1600" y2="125"/><line x1="1900" y1="105" x2="1900" y2="125"/></g>
+<text x="1750.0" y="107" font-size="18" text-anchor="middle" fill="#c0392b">6000</text>
+<g stroke="#c0392b" stroke-width="1.5"><line x1="50" y1="150" x2="50" y2="1350"/><line x1="40" y1="150" x2="60" y2="150"/><line x1="40" y1="1350" x2="60" y2="1350"/></g>
+<text x="40" y="750.0" font-size="22" text-anchor="middle" fill="#c0392b" transform="rotate(-90 40 750.0)">24000</text>
+<text x="1900" y="1375" font-size="20" text-anchor="end" fill="#666">架空の工場（サンプル）　柱間 6000　単位 mm</text>
+</svg>

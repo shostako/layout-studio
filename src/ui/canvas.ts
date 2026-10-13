@@ -17,8 +17,8 @@ import {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-// 最初に見せる範囲（架空の 20 m × 15 m）。背景の図面や敷地が入ったら、そちらに合わせる
-const HOME: Rect = { x: 0, y: 0, width: 20000, height: 15000 }
+// 最初に見せる範囲（架空の 20 m × 15 m）。背景の図面が入ったら setHome でそちらに合わせる
+const DEFAULT_HOME: Rect = { x: 0, y: 0, width: 20000, height: 15000 }
 
 // ホイール 1 目盛り（deltaY = 100）で 1.2 倍
 const WHEEL_ZOOM_PER_100 = 1.2
@@ -34,6 +34,8 @@ export type Canvas = {
   svg: SVGSVGElement
   // 図面の座標（mm）で描くものを入れる層。設備はここに足す
   world: SVGGElement
+  // world と同じ座標で、グリッドより下に描く層（背景の図面）
+  underlay: SVGGElement
   toolbar: HTMLElement
   // キャンバスの左に置く欄（ひな形など）
   side: HTMLElement
@@ -42,6 +44,10 @@ export type Canvas = {
   toWorld(clientX: number, clientY: number): Point
   // Space を押している間の左ボタンは画面の移動に使う
   isPanKeyDown(): boolean
+  // 「全体」で見せる範囲を変える（null で最初の範囲に戻す）。表示はまだ動かさない
+  setHome(rect: Rect | null): void
+  // 「全体」の範囲を画面に収める
+  fitHome(): void
 }
 
 export function mountCanvas(root: HTMLElement): Canvas {
@@ -63,7 +69,8 @@ export function mountCanvas(root: HTMLElement): Canvas {
   const gridMajor = svg('path', { class: 'grid-major' })
   const axes = svg('path', { class: 'axes' })
   const world = svg('g', { class: 'world' })
-  svgEl.append(gridMinor, gridMajor, axes, world)
+  const underlay = svg('g', { class: 'underlay' })
+  svgEl.append(underlay, gridMinor, gridMajor, axes, world)
 
   const status = document.createElement('div')
   status.className = 'status'
@@ -78,7 +85,8 @@ export function mountCanvas(root: HTMLElement): Canvas {
     return { width: Math.max(1, r.width), height: Math.max(1, r.height) }
   }
 
-  let view: Viewport = fitRect(HOME, size())
+  let homeRect: Rect = DEFAULT_HOME
+  let view: Viewport = fitRect(homeRect, size())
   // 使う人が一度も動かしていない間は、窓の大きさが決まるたびに最初の範囲へ合わせ直す
   let touched = false
   let cursor: Point | null = null
@@ -107,10 +115,9 @@ export function mountCanvas(root: HTMLElement): Canvas {
     gridMajor.setAttribute('d', path(lines.majorXs, lines.majorYs))
     const o = worldToScreen(view, { x: 0, y: 0 })
     axes.setAttribute('d', `M${Math.round(o.x) + 0.5} 0V${s.height}M0 ${Math.round(o.y) + 0.5}H${s.width}`)
-    world.setAttribute(
-      'transform',
-      `matrix(${view.scale} 0 0 ${view.scale} ${-view.originX * view.scale} ${-view.originY * view.scale})`,
-    )
+    const m = `matrix(${view.scale} 0 0 ${view.scale} ${-view.originX * view.scale} ${-view.originY * view.scale})`
+    world.setAttribute('transform', m)
+    underlay.setAttribute('transform', m)
     const pos = cursor ? `x ${Math.round(cursor.x)} mm, y ${Math.round(cursor.y)} mm` : '—'
     status.textContent =
       `${pos}　｜　グリッド ${formatLength(step.minor)}（太線 ${formatLength(step.major)}）` +
@@ -123,11 +130,11 @@ export function mountCanvas(root: HTMLElement): Canvas {
   }
   const zoomIn = () => setView(zoomAt(view, center(), BUTTON_ZOOM))
   const zoomOut = () => setView(zoomAt(view, center(), 1 / BUTTON_ZOOM))
-  const home = () => setView(fitRect(HOME, size()))
+  const home = () => setView(fitRect(homeRect, size()))
 
   mkButton('＋', '拡大（+ キー）', zoomIn)
   mkButton('－', '縮小（- キー）', zoomOut)
-  mkButton('全体', '最初の範囲を表示（0 キー）', home)
+  mkButton('全体', '図面の全体を表示（0 キー）', home)
   const help = document.createElement('span')
   help.className = 'help'
   help.textContent = 'ホイール: 拡大縮小　中・右ボタンか Space＋左ボタンのドラッグ: 画面の移動'
@@ -221,7 +228,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
 
   // 窓の大きさが変わっても、左上の図面座標と倍率はそのまま
   new ResizeObserver(() => {
-    if (!touched) view = fitRect(HOME, size())
+    if (!touched) view = fitRect(homeRect, size())
     redraw()
   }).observe(svgEl)
 
@@ -229,6 +236,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
   return {
     svg: svgEl,
     world,
+    underlay,
     toolbar,
     side,
     getViewport: () => view,
@@ -237,5 +245,9 @@ export function mountCanvas(root: HTMLElement): Canvas {
       return screenToWorld(view, { x: clientX - r.left, y: clientY - r.top })
     },
     isPanKeyDown: () => spaceDown,
+    setHome: (rect) => {
+      homeRect = rect ?? DEFAULT_HOME
+    },
+    fitHome: home,
   }
 }

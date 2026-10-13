@@ -1,13 +1,18 @@
 // シーンを変える操作（コマンド）。画面・保存・元に戻す・AI の操作は、すべてここを通る。
 // applyCommand は純関数で、元のシーンを書き換えず、新しいシーンを返す。
 
+import { calibrate, checkBackground, type Background } from './background'
 import type { Equipment, Rotation, Scene } from './scene'
+import type { Point } from './viewport'
 
 export type Command =
   | { type: 'add'; equipment: Equipment } // 設備を置く。id は呼ぶ側が決める（nextEquipmentId）
   | { type: 'move'; ids: string[]; dx: number; dy: number } // 設備をずらす（mm）
   | { type: 'rotate'; ids: string[]; quarterTurns: number } // 各設備の中心のまわりに 90 度 × n 回す。正が時計回り
   | { type: 'remove'; ids: string[] } // 設備を消す
+  | { type: 'setBackground'; background: Background | null } // 背景の画像を置く・差し替える・外す（null）
+  | { type: 'calibrateBackground'; a: Point; b: Point; distance: number } // 図面の上の 2 点が distance mm 離れているとして縮尺を合わせる。a は動かない
+  | { type: 'moveBackground'; dx: number; dy: number } // 背景をずらす（mm）
 
 export type CommandResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
@@ -21,6 +26,12 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return rotate(scene, cmd.ids, cmd.quarterTurns)
     case 'remove':
       return remove(scene, cmd.ids)
+    case 'setBackground':
+      return setBackground(scene, cmd.background)
+    case 'calibrateBackground':
+      return calibrateBackground(scene, cmd.a, cmd.b, cmd.distance)
+    case 'moveBackground':
+      return moveBackground(scene, cmd.dx, cmd.dy)
   }
 }
 
@@ -74,4 +85,25 @@ function remove(scene: Scene, ids: string[]): CommandResult {
   if (bad) return fail(bad)
   const targets = new Set(ids)
   return { ok: true, scene: { ...scene, equipment: scene.equipment.filter((e) => !targets.has(e.id)) } }
+}
+
+function setBackground(scene: Scene, bg: Background | null): CommandResult {
+  if (bg === null) return { ok: true, scene: { ...scene, background: null } }
+  const bad = checkBackground(bg)
+  if (bad) return fail(bad)
+  return { ok: true, scene: { ...scene, background: { ...bg } } }
+}
+
+function calibrateBackground(scene: Scene, a: Point, b: Point, distance: number): CommandResult {
+  if (!scene.background) return fail('背景の画像がありません')
+  const r = calibrate(scene.background, a, b, distance)
+  if (!r.ok) return fail(r.error)
+  return { ok: true, scene: { ...scene, background: r.background } }
+}
+
+function moveBackground(scene: Scene, dx: number, dy: number): CommandResult {
+  const bg = scene.background
+  if (!bg) return fail('背景の画像がありません')
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return fail('移動量が数ではありません')
+  return { ok: true, scene: { ...scene, background: { ...bg, x: bg.x + dx, y: bg.y + dy } } }
 }

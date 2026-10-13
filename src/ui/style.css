@@ -239,3 +239,60 @@ body {
   opacity: 0.5;
   pointer-events: none;
 }
+.background {
+  pointer-events: none;
+  image-rendering: auto;
+}
+.side .info.warn {
+  color: #b9770e;
+}
+.side button.active {
+  outline: 2px solid var(--axes);
+}
+.bg-view {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+}
+.bg-view label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.bg-view input[type='range'] {
+  width: 90px;
+}
+.calibrate-form {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+.calibrate-form input {
+  width: 6em;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 1em;
+}
+.canvas.picking {
+  cursor: crosshair;
+}
+.pick-line,
+.pick-mark {
+  fill: none;
+  stroke: var(--axes);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.pick-line {
+  stroke-dasharray: 6 4;
+}
+.calibrate-form[hidden] {
+  display: none;
+}
