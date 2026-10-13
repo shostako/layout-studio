@@ -377,3 +377,56 @@ body {
 .props input[type='number'] {
   font-variant-numeric: tabular-nums;
 }
+.aisle-body {
+  fill: none;
+  stroke: rgba(30, 136, 229, 0.22);
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
+  pointer-events: none;
+}
+.aisle-center {
+  fill: none;
+  stroke: #1e88e5;
+  stroke-width: 1.5;
+  stroke-dasharray: 10 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.aisle.selected .aisle-body {
+  stroke: rgba(30, 136, 229, 0.4);
+}
+.aisle.selected .aisle-center {
+  stroke: var(--axes);
+  stroke-width: 2.5;
+}
+.aisle.drawing {
+  opacity: 0.8;
+}
+.aisle-vertex {
+  fill: #fff;
+  stroke: #1e88e5;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.aisle-vertex.closing {
+  fill: #1e88e5;
+}
+.aisle-draw-form {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+.aisle-draw-form button {
+  white-space: nowrap;
+}
+.aisle-draw-form input {
+  width: 5.5em;
+  min-width: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.aisle-panel .actions[hidden],
+.aisle-panel .info[hidden] {
+  display: none;
+}

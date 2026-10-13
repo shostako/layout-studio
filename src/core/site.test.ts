@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyCommand } from './commands'
-import { createEmptyScene, type Equipment, type Scene } from './scene'
+import { SCENE_VERSION, createEmptyScene, type Equipment, type Scene } from './scene'
 import { checkSite, equipmentOutsideSite, pointInSite, rectInSite, rectSite, siteArea, siteBounds, type Site } from './site'
 import { parseScene, serializeScene } from './sceneFile'
 
@@ -143,7 +143,7 @@ describe('ファイルの敷地', () => {
     const r = parseScene(JSON.stringify({ version: 1, background: null, equipment: [eq('a')] }))
     expect(r.ok).toBe(true)
     if (r.ok) {
-      expect(r.scene.version).toBe(2)
+      expect(r.scene.version).toBe(SCENE_VERSION)
       expect(r.scene.site).toBeNull()
       expect(r.scene.equipment).toHaveLength(1)
     }
