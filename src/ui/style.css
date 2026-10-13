@@ -7,6 +7,7 @@
   --grid-minor: #ecebe7;
   --grid-major: #d2d0c9;
   --axes: #d2691e;
+  --link: #37474f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -18,6 +19,7 @@
     --grid-minor: #26282c;
     --grid-major: #383a40;
     --axes: #d08050;
+    --link: #cfd8dc;
   }
 }
 html,
@@ -648,4 +650,44 @@ body {
   max-width: 40em;
   margin-top: 6px;
   white-space: normal;
+}
+
+/* 工程のつなぎ（設備から設備への矢印） */
+.link-line {
+  fill: none;
+  stroke: var(--link);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.link-head {
+  fill: var(--link);
+  pointer-events: none;
+}
+.link.selected .link-line {
+  stroke: var(--axes);
+  stroke-width: 3.5;
+}
+.link.selected .link-head {
+  fill: var(--axes);
+}
+.link.drawing {
+  opacity: 0.6;
+}
+.link.drawing .link-line {
+  stroke-dasharray: 6 4;
+}
+.link-from {
+  fill: none;
+  stroke: var(--axes);
+  stroke-width: 3;
+  stroke-dasharray: 6 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.link-actions {
+  flex-wrap: wrap;
+}
+.link-actions button {
+  white-space: nowrap;
 }

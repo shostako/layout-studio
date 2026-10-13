@@ -2,10 +2,12 @@
 
 import type { Aisle } from './aisle'
 import type { Background } from './background'
+import type { Link } from './flow'
 import type { Site } from './site'
 
-// 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）を足した
-export const SCENE_VERSION = 4
+// 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）、
+// 版 5 で工程のつなぎ（links）を足した
+export const SCENE_VERSION = 5
 
 export type Rotation = 0 | 90 | 180 | 270
 
@@ -34,10 +36,11 @@ export type Scene = {
   site: Site | null // 敷地の外形。無ければ null
   equipment: Equipment[]
   aisles: Aisle[] // AGV の通路
+  links: Link[] // 工程のつなぎ（設備から設備へ、ものが流れる向き）
 }
 
 export function createEmptyScene(): Scene {
-  return { version: SCENE_VERSION, background: null, site: null, equipment: [], aisles: [] }
+  return { version: SCENE_VERSION, background: null, site: null, equipment: [], aisles: [], links: [] }
 }
 
 // 回転を考えた、図面の上で占める外接の長方形（左上と大きさ）

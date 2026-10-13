@@ -4,6 +4,7 @@ import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
 import { mountCompare } from './ui/compare'
 import { mountEditor } from './ui/editor'
+import { mountFlow } from './ui/flow'
 import { mountPlans } from './ui/plans'
 import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
@@ -14,6 +15,8 @@ if (app) {
   const editor = mountEditor(canvas)
   mountBackground(canvas, editor)
   mountSite(canvas, editor)
+  // つなぎは通路より上に描くので、矢印のクリックを通路より先に受ける
+  mountFlow(canvas, editor)
   mountAisles(canvas, editor)
   const plans = mountPlans(canvas, editor)
   mountStorage(canvas, editor, plans)
