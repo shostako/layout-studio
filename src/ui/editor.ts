@@ -5,6 +5,7 @@ import type { Canvas } from './canvas'
 import { applyCommand, type Command } from '../core/commands'
 import { canRedo, canUndo, createHistory, execute, redo, undo, type History } from '../core/history'
 import { DEFAULT_SNAP, SNAP_STEPS, hitTest, snapCenter, snapMove } from '../core/placement'
+import { equipmentOutsideSite } from '../core/site'
 import { createEmptyScene, footprint, nextEquipmentId, type Equipment, type Rotation, type Scene } from '../core/scene'
 import { TEMPLATES, equipmentFromTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
 import { formatLength, type Point } from '../core/viewport'
@@ -35,6 +36,8 @@ export type Editor = {
   onRender(listener: () => void): void
   // 履歴を捨てて、このシーンから始め直す（起動時に自動保存から戻すときだけ使う。ふだんの操作は run を通す）
   reset(scene: Scene): void
+  // 今のスナップの間隔（mm、0 はスナップしない）。敷地の頂点を拾うときにも使う
+  snapStep(): number
 }
 
 type Mode =
@@ -270,8 +273,12 @@ export function mountEditor(canvas: Canvas): Editor {
     }
     selected = liveSelection()
     const sel = new Set(selected)
+    // 敷地からはみ出した設備。ドラッグ中は動かした先で判定する
+    const outside = new Set(equipmentOutsideSite(shown))
     layer.replaceChildren(
-      ...shown.equipment.map((eq) => drawEquipment(eq, sel.has(eq.id) ? 'equipment selected' : 'equipment')),
+      ...shown.equipment.map((eq) =>
+        drawEquipment(eq, `equipment${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}`),
+      ),
     )
     if (mode.type === 'placing' && pointer) layer.append(drawEquipment(ghost(mode, pointer), 'equipment ghost'))
     toolLayer.replaceChildren(...(mode.type === 'tool' ? mode.tool.overlay(pointer) : []))
@@ -287,9 +294,12 @@ export function mountEditor(canvas: Canvas): Editor {
     } else if (items.length === 1) {
       const e = items[0]!
       const fp = footprint(e)
-      info.textContent = `${e.name}　${e.width} × ${e.depth} mm、${e.rotation}°　中心 (${Math.round(e.x)}, ${Math.round(e.y)})　左上 (${Math.round(fp.x)}, ${Math.round(fp.y)})`
+      info.textContent =
+        `${e.name}　${e.width} × ${e.depth} mm、${e.rotation}°　中心 (${Math.round(e.x)}, ${Math.round(e.y)})　左上 (${Math.round(fp.x)}, ${Math.round(fp.y)})` +
+        (outside.has(e.id) ? '　敷地からはみ出し' : '')
     } else if (items.length > 1) {
-      info.textContent = `${items.length} 台`
+      const out = items.filter((e) => outside.has(e.id)).length
+      info.textContent = `${items.length} 台${out ? `（うち ${out} 台が敷地からはみ出し）` : ''}`
     } else {
       info.textContent = 'なし'
     }
@@ -464,5 +474,6 @@ export function mountEditor(canvas: Canvas): Editor {
       message = ''
       render()
     },
+    snapStep: () => snap,
   }
 }

@@ -3,6 +3,7 @@
 import type { Canvas } from './canvas'
 import type { Editor, Tool } from './editor'
 import { backgroundRect, createBackground, type Background } from '../core/background'
+import { sceneExtent } from '../core/site'
 import { formatLength, type Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -157,8 +158,7 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
     }
   }
   const fit = () => {
-    const bg = editor.scene().background
-    canvas.setHome(bg ? backgroundRect(bg) : null)
+    canvas.setHome(sceneExtent(editor.scene()))
     canvas.fitHome()
   }
 
@@ -275,8 +275,8 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
       } else {
         image.removeAttribute('href')
       }
-      // 元に戻すで背景が変わっても「全体」が背景に合うようにする（表示は動かさない）
-      canvas.setHome(bg ? backgroundRect(bg) : null)
+      // 元に戻すで背景が変わっても「全体」が背景（と敷地）に合うようにする（表示は動かさない）
+      canvas.setHome(sceneExtent(editor.scene()))
     }
     image.style.display = bg && visible ? '' : 'none'
     image.style.opacity = String(opacity)

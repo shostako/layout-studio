@@ -235,6 +235,15 @@ body {
   stroke: var(--axes);
   stroke-width: 3;
 }
+.equipment.outside rect {
+  stroke: #d32f2f;
+  stroke-width: 3;
+  stroke-dasharray: 8 4;
+}
+.equipment.outside.selected rect {
+  stroke-width: 4;
+  stroke-dasharray: none;
+}
 .equipment.ghost {
   opacity: 0.5;
   pointer-events: none;
@@ -309,4 +318,39 @@ body {
 }
 .save-state.warn {
   color: #b9770e;
+}
+.site {
+  fill: rgba(46, 125, 50, 0.06);
+  stroke: #2e7d32;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.site.drawing {
+  fill: rgba(46, 125, 50, 0.12);
+  stroke-dasharray: 6 4;
+}
+.site-vertex {
+  fill: #fff;
+  stroke: #2e7d32;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.site-vertex.closing {
+  fill: #2e7d32;
+}
+.site-rect-form {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+.site-rect-form button {
+  white-space: nowrap;
+}
+.site-rect-form input {
+  width: 5.5em;
+  min-width: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
 }

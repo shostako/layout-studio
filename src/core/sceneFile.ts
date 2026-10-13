@@ -1,5 +1,5 @@
 // シーンの JSON ファイル: 書き出しと、読み込み（古い版の変換と中身の確かめ）。DOM に触らない。
-// ファイルの中身はシーンそのもの（version・background・equipment）。形を変えるときは SCENE_VERSION を上げ、
+// ファイルの中身はシーンそのもの（version・background・site・equipment）。形を変えるときは SCENE_VERSION を上げ、
 // MIGRATIONS に 1 つ前の版から変換する関数を足す。
 
 import { applyCommand } from './commands'
@@ -7,8 +7,11 @@ import { SCENE_VERSION, createEmptyScene, type Scene } from './scene'
 
 export type ParseResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
-// MIGRATIONS[n] は版 n のデータを版 n + 1 に変える。今は版 1 しかないので空
-export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {}
+// MIGRATIONS[n] は版 n のデータを版 n + 1 に変える
+export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {
+  // 版 2 で敷地の外形を足した。版 1 には無いので null
+  1: (d) => ({ ...d, site: null }),
+}
 
 export function serializeScene(scene: Scene): string {
   return JSON.stringify(scene, null, 2) + '\n'

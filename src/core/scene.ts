@@ -1,8 +1,10 @@
 // シーン（図面・設備）の型。DOM に触らない。単位は mm、原点は図面の左上、右が x、下が y。
 
 import type { Background } from './background'
+import type { Site } from './site'
 
-export const SCENE_VERSION = 1
+// 版 2 で敷地の外形（site）を足した
+export const SCENE_VERSION = 2
 
 export type Rotation = 0 | 90 | 180 | 270
 
@@ -22,11 +24,12 @@ export type Equipment = {
 export type Scene = {
   version: typeof SCENE_VERSION
   background: Background | null // 建物の図面の画像。無ければ null
+  site: Site | null // 敷地の外形。無ければ null
   equipment: Equipment[]
 }
 
 export function createEmptyScene(): Scene {
-  return { version: SCENE_VERSION, background: null, equipment: [] }
+  return { version: SCENE_VERSION, background: null, site: null, equipment: [] }
 }
 
 // 回転を考えた、図面の上で占める外接の長方形（左上と大きさ）
