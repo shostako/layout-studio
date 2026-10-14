@@ -15,7 +15,19 @@ export function isAnchor(scene: Scene, eq: Equipment): boolean {
 function reach(scene: Scene, anchor: Equipment): Set<string> {
   const byId = new Map(scene.equipment.map((e) => [e.id, e]))
   const out = new Set<string>()
+  // 載る設備は、つなぎが逆向き（載る設備 → 基準）でも入れ、そこからも下流へたどる
   const stack = [anchor.id]
+  for (const l of scene.links) {
+    const other = l.to === anchor.id ? l.from : l.from === anchor.id ? l.to : null
+    if (other === null || out.has(other)) continue
+    const eq = byId.get(other)
+    if (!eq) continue
+    const t = scene.templates.find((x) => x.kind === eq.kind)
+    if (t?.role === 'mounted' && t.mountsOn === anchor.kind) {
+      out.add(other)
+      stack.push(other)
+    }
+  }
   while (stack.length) {
     const id = stack.pop()!
     for (const l of scene.links) {
@@ -25,15 +37,6 @@ function reach(scene: Scene, anchor: Equipment): Set<string> {
       out.add(l.to)
       stack.push(l.to)
     }
-  }
-  // 載る設備は、つなぎが逆向き（載る設備 → 基準）でも入れる
-  for (const l of scene.links) {
-    const other = l.to === anchor.id ? l.from : l.from === anchor.id ? l.to : null
-    if (other === null || out.has(other)) continue
-    const eq = byId.get(other)
-    if (!eq) continue
-    const t = scene.templates.find((x) => x.kind === eq.kind)
-    if (t?.role === 'mounted' && t.mountsOn === anchor.kind) out.add(other)
   }
   return out
 }

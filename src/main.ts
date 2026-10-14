@@ -1,5 +1,6 @@
 import './ui/style.css'
 import { mountAi } from './ui/ai'
+import { mountAttach } from './ui/attach'
 import { mountAisles } from './ui/aisle'
 import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
@@ -22,6 +23,7 @@ if (app) {
   const canvas = mountCanvas(app)
   const editor = mountEditor(canvas)
   mountTemplates(canvas, editor)
+  mountAttach(canvas, editor)
   mountBackground(canvas, editor)
   mountSite(canvas, editor)
   // つなぎは通路より上に描くので、矢印のクリックを通路より先に受ける

@@ -110,7 +110,8 @@ function templateLine(t: EquipmentTemplate, all: readonly EquipmentTemplate[]): 
 }
 
 // 射出成形の組の配置の決まり（docs/layout-rules.md と合わせる）。成形機が基準の一覧のときだけ添える
-const INJECTION_TIPS = `- 成形機は配置の基準。頼まれない限り成形機を動かさない・回さない。
+const INJECTION_TIPS = `- 「付帯設備を（適切に）配置して」は attachUnit、「（適切な配置に）整えて」は arrangeUnits を使う。座標を手で計算するのは、これで足りないときだけ。
+- 成形機は配置の基準。頼まれない限り成形機を動かさない・回さない。
 - 取出機は成形機の上に載せる（重ねて置き、成形機 → 取出機とつなぐ。つないだ組の重なりは注意にならない）。取出機の梁は成形機の横長の辺を横切り、取り出し側へ張り出す。
 - 取り出し側（成形機の 2 つの長辺のどちらに成形品を落とすか）は、頼みに書いてあればそれ。無ければ、その成形機につないだ取出機が張り出している側、取出機が無ければ付帯設備がある側。どれも無いとき（新しく付けるとき）だけ、成形機が横（長辺が x）なら下（y の大きい側）、縦（長辺が y）なら右（x の大きい側）。整えるときは今の側を変えない。
 - 取出機の位置: 梁は取り出し側と反対へ 800 mm、取り出し側へ（取出機の奥行 − 800）mm 張り出す（中心は成形機の中心から取り出し側へ 奥行の半分 − 800）。長辺に沿っては成形機の中心から長さの 0.15 倍だけずらして載せ、後工程はその反対の向きへ、取出機の端から余白をあけて並べる。
@@ -161,6 +162,9 @@ export function aiInstructions(templates: readonly EquipmentTemplate[] = INJECTI
 - { "type": "rotate", "ids": ["eq-1"], "quarterTurns": 1 } 設備を中心のまわりに 90° × n 回す（正が時計回り）
 - { "type": "rotateAbout", "ids": ["eq-1", "eq-2"], "quarterTurns": 1, "pivot": { "x": 5000, "y": 3000 } }
   設備をまとめて pivot のまわりに回す（位置も向きも回る）。ユニットごと回すときは、基準の設備の中心を pivot に、基準と members を ids に
+- { "type": "attachUnit", "ids": ["eq-2"], "side": "bottom", "toward": "left" }
+  基準の設備（ids）に、組の決まりどおりの付帯設備を置いてつなぐ（ユニットに同じ種類があれば動かして使う）。省ける項目: side（取り出し側。横の基準は top・bottom、縦は left・right）、toward（後工程を並べる向き。横は left・right、縦は top・bottom）。省くと、つないだ取出機・付帯設備の位置から、無ければ横は下・左、縦は右・上
+- { "type": "arrangeUnits", "ids": ["eq-2"] } ユニットの付帯設備を、今の並びの順と向きのまま、余白ちょうどの間隔で列に揃える（基準の設備と載る設備は動かさない）。ids を省くと全部のユニット
 - { "type": "remove", "ids": ["eq-1"] } 設備を消す（つなぎも消える）
 - { "type": "duplicate", "ids": ["eq-1"], "dx": 0, "dy": 3000 } 設備を写してずらして置く（newIds は省ける）
 - { "type": "update", "ids": ["eq-1"], "changes": { "name": "成形機 A", "width": 6500, "depth": 2200, "color": "#5b8bd9", "clearance": { "top": 800 } } }

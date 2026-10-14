@@ -3,10 +3,12 @@
 // 1 つでも断られたら、どれも当てない（理由と何番目かを返す）。当てるのは呼ぶ側で、batch コマンドにまとめて 1 回の操作にする。
 
 import { DEFAULT_AISLE_WIDTH, nextAisleId, nextAisleName, type Aisle } from './aisle'
+import { arrangeUnit, attachUnit, forAnchors, type Side } from './attach'
 import { applyCommand, type Command } from './commands'
 import { FLOW_LIMITS, nextEquipmentId, nextEquipmentIds, type FlowSettings, type Rotation, type Scene } from './scene'
 import { siteArea } from './site'
 import { equipmentFromTemplate, findTemplate, nextEquipmentName, type EquipmentTemplate } from './templates'
+import { unitsOf } from './unit'
 import type { Point } from './viewport'
 
 // 1 回の応答で受け付ける指示の数の上限
@@ -45,7 +47,7 @@ const PASS = {
 const PASS_TYPES = Object.keys(PASS) as (keyof typeof PASS)[]
 
 // AI が出せる指示の種類（AI への説明に使う）
-export const AI_COMMAND_TYPES: readonly string[] = ['place', 'addAisle', 'duplicate', ...PASS_TYPES]
+export const AI_COMMAND_TYPES: readonly string[] = ['place', 'addAisle', 'duplicate', 'attachUnit', 'arrangeUnits', ...PASS_TYPES]
 
 // AI からは使わせない画面のコマンドと、その理由
 const REFUSED: Record<string, string> = {
@@ -107,6 +109,8 @@ export function planAiCommands(scene: Scene, commands: readonly unknown[]): AiPl
     const refuse = (error: string): AiPlan => ({ ok: false, index: i, error: `${i + 1} 番目の指示${label}: ${error}` })
     const c = toCommand(current, raw)
     if (!c.ok) return refuse(c.error)
+    // 付ける・整えるで、もう決まりどおりなら当てるものが無い
+    if (c.command === null) continue
     let r
     try {
       r = applyCommand(current, c.command)
@@ -115,13 +119,13 @@ export function planAiCommands(scene: Scene, commands: readonly unknown[]): AiPl
       return refuse('指示の形が正しくありません')
     }
     if (!r.ok) return refuse(r.error)
-    steps.push({ command: c.command, text: describeCommand(current, c.command) })
+    steps.push({ command: c.command, text: c.text ?? describeCommand(current, c.command) })
     current = r.scene
   }
   return { ok: true, steps, scene: current }
 }
 
-type ToCommand = { ok: true; command: Command } | { ok: false; error: string }
+type ToCommand = { ok: true; command: Command | null; text?: string } | { ok: false; error: string }
 
 function toCommand(scene: Scene, raw: unknown): ToCommand {
   const no = (error: string): ToCommand => ({ ok: false, error })
@@ -131,6 +135,7 @@ function toCommand(scene: Scene, raw: unknown): ToCommand {
   const type = r.type
   if (REFUSED[type]) return no(REFUSED[type]!)
   if (type === 'place') return place(scene, r)
+  if (type === 'attachUnit' || type === 'arrangeUnits') return unitCommand(scene, r, type)
   if (type === 'addAisle') return addAisle(scene, r)
   if (type === 'duplicate') {
     const bad = checkFields(r, { ids: 'ids', dx: 'length', dy: 'length' })
@@ -222,6 +227,27 @@ function place(scene: Scene, r: Record<string, unknown>): ToCommand {
     rotation: r.rotation as Rotation | undefined,
   })
   return { ok: true, command: { type: 'add', equipment } }
+}
+
+const SIDES = ['top', 'bottom', 'left', 'right'] as const
+
+// 付帯設備を付ける（attachUnit）・整える（arrangeUnits）。計算は attach.ts。ids は基準の設備（整えるは省くと全部）
+function unitCommand(scene: Scene, r: Record<string, unknown>, type: 'attachUnit' | 'arrangeUnits'): ToCommand {
+  const no = (error: string): ToCommand => ({ ok: false, error })
+  if (r.ids !== undefined && checkField(r.ids, 'ids')) return no('ids は基準の設備の id の配列にしてください')
+  for (const k of ['side', 'toward'] as const)
+    if (r[k] !== undefined && !SIDES.includes(r[k] as (typeof SIDES)[number])) return no(`${k} は ${SIDES.join('・')} のどれかです`)
+  const all = [...unitsOf(scene).keys()]
+  const ids = (r.ids as string[] | undefined) ?? (type === 'arrangeUnits' ? all : undefined)
+  if (!ids || ids.length === 0) return no(type === 'attachUnit' ? 'ids（付ける基準の設備の id）がありません' : '基準の設備がありません')
+  const opts = { side: r.side as Side | undefined, toward: r.toward as Side | undefined }
+  const f = type === 'attachUnit' ? (s: Scene, id: string) => attachUnit(s, id, opts) : (s: Scene, id: string) => arrangeUnit(s, id)
+  const res = forAnchors(scene, ids, f, (s, c) => {
+    const a = applyCommand(s, c)
+    return a.ok ? a.scene : a.error
+  })
+  if (!res.ok) return no(res.error)
+  return { ok: true, command: res.command, text: `${type === 'attachUnit' ? '付帯設備を付ける' : '付帯設備を整える'}: ${res.notes.join('。')}` }
 }
 
 // 通路を描く。幅を省けば最初の値、周回を省けば開いた通路、一方通行を省けば両方向

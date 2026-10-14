@@ -231,6 +231,8 @@ async function run(a: Args, ctx: Context, apply: boolean): Promise<ToolResult> {
 
   const plan = planAiCommands(p.scene, c.commands)
   if (!plan.ok) return err(`${plan.error}。どの指示も当てていません${apply ? '（何も変えていません）' : ''}`)
+  // 付ける・整えるで、もう決まりどおりなら変えるものが無い
+  if (plan.steps.length === 0) return ok(json({ ok: true, applied: false, ...where(src), plan: { id: p.id, name: p.name }, message: '変えるものがありません（もう決まりどおりです）' }))
   // 画面と同じく、batch コマンド 1 つにまとめて当てる（画面では 1 回の元に戻すで戻る形）
   const r = applyCommand(p.scene, { type: 'batch', commands: plan.steps.map((s) => s.command) })
   if (!r.ok) return err(`${r.error}。どの指示も当てていません`)

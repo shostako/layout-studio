@@ -221,6 +221,22 @@ body {
   gap: 4px;
   margin: 6px 0;
 }
+/* 付帯設備を付ける・整える */
+.attach-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--muted);
+}
+.attach-options label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+}
+.attach-options select {
+  font: inherit;
+}
 /* 設備の種類の編集 */
 .kind-panel {
   margin: 4px 0 8px;
