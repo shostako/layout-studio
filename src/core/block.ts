@@ -67,7 +67,9 @@ export function placeBlock(scene: Scene, o: BlockOptions): BlockResult {
   const t = anchorTemplate(scene, o.kind)
   if (typeof t === 'string') return { ok: false, error: t }
   const horizontal = (o.orientation ?? 'horizontal') === 'horizontal'
-  const rotation: Rotation = horizontal ? 0 : 90
+  // 横＝長い辺が x。ひな形が縦長（幅 < 奥行）なら、回して横にする
+  const wide = t.width >= t.depth
+  const rotation: Rotation = horizontal === wide ? 0 : 90
 
   // 1 台ぶんを原点に作って、本体の外接の長方形といちばん広い余白を測る
   const probe = oneUnit(createEmptyScene(scene.templates), t, { x: 0, y: 0 }, rotation, o)

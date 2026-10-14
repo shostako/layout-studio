@@ -116,6 +116,21 @@ describe('付け直しでの取出機の選び方', () => {
   })
 })
 
+describe('付け直しでのつなぎ', () => {
+  it('順の入れ替わったつなぎ（取出機 → トリミング機 → 型抜き機）は、決まりのつなぎに置き換える', () => {
+    let s = attached(machine())
+    const id = (n: string) => s.equipment.find((e) => e.name === n)!.id
+    const [robot, deg, trim] = [id('取出機 1'), id('型抜き機 1'), id('トリミング機 1')]
+    s = run(s, { type: 'unlink', links: [{ from: robot, to: deg }, { from: deg, to: trim }] })
+    s = run(s, { type: 'link', links: [{ from: robot, to: trim }, { from: trim, to: deg }] })
+    const r = attachUnit(s, 'eq-1')
+    expect(r.ok).toBe(true)
+    const after = run(s, r.ok ? r.command : null)
+    const has = (from: string, to: string) => after.links.some((l) => l.from === from && l.to === to)
+    expect([has(robot, deg), has(deg, trim), has(robot, trim), has(trim, deg)]).toEqual([true, true, false, false])
+  })
+})
+
 describe('付け直しでのストッカーと予備', () => {
   it('ストッカーが 2 台あれば、つなぎの順で先のものを主の位置に置く', () => {
     let s = attached(machine())
@@ -154,6 +169,23 @@ describe('arrangeUnit（整える）', () => {
     expect(w['取出機 1']).toEqual([10500, 4500, 0])
     expect(findOverlaps(after)).toEqual([])
     expect(arrangeUnit(after, 'eq-1')).toMatchObject({ ok: true, command: null })
+  })
+})
+
+describe('決まりの無い基準の設備', () => {
+  it('整えるも断る。省いた整える（全部）は決まりのある基準の設備だけ', () => {
+    const zero = { top: 0, right: 0, bottom: 0, left: 0 }
+    let s = run(machine(), {
+      type: 'setTemplates',
+      templates: [...INJECTION_PRESET, { kind: 'press', name: 'プレス機', width: 3000, depth: 2000, color: '#888888', clearance: zero, role: 'anchor' }],
+    })
+    s = run(s, { type: 'add', equipment: { id: 'p1', kind: 'press', name: 'プレス機 1', x: 40000, y: 0, width: 3000, depth: 2000, rotation: 0, color: '#888888', clearance: zero } })
+    s = run(s, { type: 'add', equipment: { ...findTemplate(INJECTION_PRESET, 'cart-stocker')!, id: 'p2', name: '置き場', x: 45000, y: 0, rotation: 0, clearance: zero } as never })
+    s = run(s, { type: 'link', links: [{ from: 'p1', to: 'p2' }] })
+    expect(arrangeUnit(s, 'p1')).toMatchObject({ ok: false, error: expect.stringContaining('決まりがありません') })
+    s = attached(s)
+    const r = planAiCommands(s, [{ type: 'arrangeUnits' }])
+    expect(r).toMatchObject({ ok: true, steps: [] })
   })
 })
 

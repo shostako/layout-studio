@@ -149,6 +149,11 @@ function robotPlace(frame: Frame, recipe: UnitRecipe, robot: Equipment): Point {
 // 種類の向き: 横の基準なら 0、縦なら 90（ユニットごと 90 度回した形）
 const rotationFor = (anchor: Equipment): Rotation => (isHorizontal(anchor) ? 0 : 90)
 
+// 付帯設備の決まりがある基準の設備か（「全部を整える」は、決まりのある基準の設備だけにする）
+export function hasRecipe(anchor: Equipment): boolean {
+  return UNIT_RECIPES.some((r) => r.anchor === anchor.kind)
+}
+
 function recipeFor(scene: Scene, anchor: Equipment): UnitRecipe | undefined {
   return UNIT_RECIPES.find((r) => r.anchor === anchor.kind)
 }
@@ -222,21 +227,26 @@ export function attachUnit(scene: Scene, anchorId: string, o: AttachOptions = {}
   for (const e of row) place(e, at.get(e.id)!)
 
   // つなぎ: 基準 → 載る → 列の順、列の最後 → 溜める設備それぞれ。もうあるものは足さない
-  const links: { from: string; to: string }[] = []
-  const want = (from: string, to: string) => {
-    if (!scene.links.some((l) => l.from === from && l.to === to) && !links.some((l) => l.from === from && l.to === to)) links.push({ from, to })
-  }
+  // つなぎ: 基準 → 載る → 列の順、列の最後 → 溜める設備それぞれ。逆向き（取出機 → 成形機）につないであれば、そのまま使う。
+  // 使う設備どうしの、決まりと違うつなぎ（順が入れ替わったものなど）は外してから足す（足すと輪になって断られるため）。
+  // 使わない設備（余った分）やユニットの外とのつなぎは触らない
+  const desired: { from: string; to: string }[] = []
   let prev = anchor.id
   if (robot) {
-    // 逆向き（取出機 → 成形機）につないであれば、そのまま使う
-    if (!scene.links.some((l) => l.from === robot.id && l.to === anchor.id)) want(anchor.id, robot.id)
+    if (scene.links.some((l) => l.from === robot.id && l.to === anchor.id)) desired.push({ from: robot.id, to: anchor.id })
+    else desired.push({ from: anchor.id, to: robot.id })
     prev = robot.id
   }
   for (const e of chain) {
-    want(prev, e!.id)
+    desired.push({ from: prev, to: e!.id })
     prev = e!.id
   }
-  for (const b of buffers) want(prev, b!.id)
+  for (const b of buffers) desired.push({ from: prev, to: b!.id })
+  const same = (a: { from: string; to: string }, b: { from: string; to: string }) => a.from === b.from && a.to === b.to
+  const usedIds = new Set([anchor.id, ...[robot, ...chain, ...buffers].map((e) => e!.id)])
+  const stale = scene.links.filter((l) => usedIds.has(l.from) && usedIds.has(l.to) && !desired.some((d) => same(d, l)))
+  const links = desired.filter((d) => !scene.links.some((l) => same(l, d)))
+  if (stale.length) commands.push({ type: 'unlink', links: stale })
   if (links.length) commands.push({ type: 'link', links })
 
   const added = [robot, ...chain, ...buffers].filter((e): e is Equipment => !!e && isNew(e)).length
@@ -252,6 +262,10 @@ export function arrangeUnit(scene: Scene, anchorId: string): AttachResult {
   const memberIds = unitsOf(scene).get(anchor.id)
   if (!memberIds) return { ok: false, error: `${anchor.name}は基準の設備ではありません` }
   const recipe = recipeFor(scene, anchor)
+  if (!recipe) {
+    const name = findTemplate(scene.templates, anchor.kind)?.name ?? anchor.kind
+    return { ok: false, error: `${name}を整える付帯設備の決まりがありません（今は射出成形の成形機だけ）` }
+  }
   const members = memberIds.map((id) => scene.equipment.find((e) => e.id === id)!)
   const robot = mountedOf(scene, anchor, members, recipe) ?? null
   // 載る設備（役割が mounted）は基準の上にあるので、列には入れない

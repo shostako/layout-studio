@@ -3,7 +3,7 @@
 import type { Canvas } from './canvas'
 import type { Editor } from './editor'
 import { applyCommand } from '../core/commands'
-import { arrangeUnit, attachUnit, forAnchors, type Side } from '../core/attach'
+import { arrangeUnit, attachUnit, forAnchors, hasRecipe, type Side } from '../core/attach'
 import { isAnchor } from '../core/unit'
 
 const SIDE_OPTIONS: [Side | '', string][] = [
@@ -62,7 +62,8 @@ export function mountAttach(canvas: Canvas, editor: Editor): void {
       return !!e && isAnchor(s, e)
     })
   }
-  const allAnchors = () => editor.scene().equipment.filter((e) => isAnchor(editor.scene(), e)).map((e) => e.id)
+  // 「全部を整える」の相手: 付帯設備の決まりがある基準の設備
+  const allAnchors = () => editor.scene().equipment.filter((e) => isAnchor(editor.scene(), e) && hasRecipe(e)).map((e) => e.id)
   const apply = (r: ReturnType<typeof forAnchors>) => {
     if (!r.ok) {
       note.textContent = r.error

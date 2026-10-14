@@ -3,7 +3,7 @@
 // 1 つでも断られたら、どれも当てない（理由と何番目かを返す）。当てるのは呼ぶ側で、batch コマンドにまとめて 1 回の操作にする。
 
 import { DEFAULT_AISLE_WIDTH, nextAisleId, nextAisleName, type Aisle } from './aisle'
-import { arrangeUnit, attachUnit, forAnchors, type Side } from './attach'
+import { arrangeUnit, attachUnit, forAnchors, hasRecipe, type Side } from './attach'
 import { placeBlock } from './block'
 import { applyCommand, type Command } from './commands'
 import { FLOW_LIMITS, nextEquipmentId, nextEquipmentIds, type FlowSettings, type Rotation, type Scene } from './scene'
@@ -239,7 +239,8 @@ function unitCommand(scene: Scene, r: Record<string, unknown>, type: 'attachUnit
   if (r.ids !== undefined && checkField(r.ids, 'ids')) return no('ids は基準の設備の id の配列にしてください')
   for (const k of ['side', 'toward'] as const)
     if (r[k] !== undefined && !SIDES.includes(r[k] as (typeof SIDES)[number])) return no(`${k} は ${SIDES.join('・')} のどれかです`)
-  const all = [...unitsOf(scene).keys()]
+  // ids を省いた整えるは、付帯設備の決まりがある基準の設備だけ
+  const all = [...unitsOf(scene).keys()].filter((id) => hasRecipe(scene.equipment.find((e) => e.id === id)!))
   const ids = (r.ids as string[] | undefined) ?? (type === 'arrangeUnits' ? all : undefined)
   if (!ids || ids.length === 0) return no(type === 'attachUnit' ? 'ids（付ける基準の設備の id）がありません' : '基準の設備がありません')
   const opts = { side: r.side as Side | undefined, toward: r.toward as Side | undefined }
