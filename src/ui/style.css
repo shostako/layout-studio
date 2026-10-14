@@ -972,6 +972,16 @@ body {
 /* ---- 白黒の表示（道具バーの「白黒」。src/ui/theme.ts が .canvas-root に mono を付ける。画像の書き出しも同じ印で白黒にする） ----
    設備は白地に黒い線と黒い文字、通路は薄い灰色の帯と黒い中心線、背景の図面は灰色にする。
    選択の印と注意（重なり・はみ出し）の色は残す。正式な図面に合わせ、ダークの見え方でも紙の色（--paper・--ink）で描く */
+/* キャンバスも紙の色にする（ダークのままだと黒い線が見えない）。グリッドも紙に合う薄い色にする */
+.canvas-root.mono .canvas {
+  background: var(--paper);
+}
+.canvas-root.mono .grid-minor {
+  stroke: #ecebe7;
+}
+.canvas-root.mono .grid-major {
+  stroke: #d2d0c9;
+}
 .mono .equipment rect {
   fill: var(--paper);
   fill-opacity: 1;
