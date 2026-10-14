@@ -51,6 +51,7 @@ function buildSvg(canvas: Canvas, frame: NonNullable<ReturnType<typeof exportFra
     g.removeAttribute('transform')
     for (const d of Array.from(g.querySelectorAll(DROP))) d.remove()
     for (const s of Array.from(g.querySelectorAll('.selected'))) s.classList.remove('selected')
+    for (const s of Array.from(g.querySelectorAll('.unit-member'))) s.classList.remove('unit-member')
     root.append(g)
   }
   // 左下に案の名前と縮尺の目盛り

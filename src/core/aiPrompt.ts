@@ -8,6 +8,7 @@ import { findOverlaps } from './overlap'
 import { FLOW_LIMITS, footprint, nextEquipmentId, type FlowSettings, type Scene } from './scene'
 import { equipmentOutsideSite, siteArea, siteBounds } from './site'
 import { INJECTION_PRESET, ROLE_LABELS, type EquipmentTemplate } from './templates'
+import { unitsOf } from './unit'
 
 // 長さは 1 mm に丸める（AI に渡す文を短くするため）
 const r = (v: number) => Math.round(v)
@@ -32,6 +33,7 @@ export type SceneSummary = {
   links: { from: string; to: string }[]
   flow: FlowSettings
   templates: EquipmentTemplate[]
+  units: { anchor: string; members: string[] }[]
   notices: string[]
   nextIds: { equipment: string; aisle: string }
 }
@@ -86,6 +88,7 @@ export function summarizeScene(scene: Scene): SceneSummary {
     links: scene.links.map((l) => ({ from: l.from, to: l.to })),
     flow: { ...scene.flow },
     templates: scene.templates.map((t) => ({ ...t, clearance: { ...t.clearance } })),
+    units: [...unitsOf(scene)].map(([anchor, members]) => ({ anchor, members })),
     notices,
     nextIds: { equipment: nextEquipmentId(scene), aisle: nextAisleId(scene) },
   }
@@ -141,6 +144,7 @@ export function aiInstructions(templates: readonly EquipmentTemplate[] = INJECTI
 - 通路（AGV の通路）は中心線の頂点の列と幅。closed が true なら周回。oneWay が true なら一方通行で、AGV は頂点の順（points[0] → points[1] → …）にだけ走る。
 - AGV の出入り口は、いちばん先の通路の points[0]。AGV は出入り口からストッカーの乗り場（いちばん近い中心線の上の点）へ行き、別に探した近道で出入り口へ帰る。
 - links は工程のつなぎ（from の設備から to の設備へものが流れる）。輪にはできない。
+- units はユニット（基準の設備 1 台と、つなぎで下流に着く付帯設備・載る設備）。2 台以上の基準から着く設備はどのユニットにも入らない。基準の設備を動かす・回すときは、members も一緒に動かす・回す。
 
 ## 返し方
 次の形の JSON だけを返してください。説明は message に日本語で書きます。
@@ -155,6 +159,8 @@ export function aiInstructions(templates: readonly EquipmentTemplate[] = INJECTI
   id を省くと eq-1, eq-2, … の続きを振ります。同じ応答の中で後から参照する設備は id を書いてください（今の続きは nextIds）。
 - { "type": "move", "ids": ["eq-1"], "dx": 1000, "dy": 0 } 設備をずらす
 - { "type": "rotate", "ids": ["eq-1"], "quarterTurns": 1 } 設備を中心のまわりに 90° × n 回す（正が時計回り）
+- { "type": "rotateAbout", "ids": ["eq-1", "eq-2"], "quarterTurns": 1, "pivot": { "x": 5000, "y": 3000 } }
+  設備をまとめて pivot のまわりに回す（位置も向きも回る）。ユニットごと回すときは、基準の設備の中心を pivot に、基準と members を ids に
 - { "type": "remove", "ids": ["eq-1"] } 設備を消す（つなぎも消える）
 - { "type": "duplicate", "ids": ["eq-1"], "dx": 0, "dy": 3000 } 設備を写してずらして置く（newIds は省ける）
 - { "type": "update", "ids": ["eq-1"], "changes": { "name": "成形機 A", "width": 6500, "depth": 2200, "color": "#5b8bd9", "clearance": { "top": 800 } } }

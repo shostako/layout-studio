@@ -25,10 +25,11 @@ export type AiCommand =
   | Extract<Command, { type: (typeof PASS_TYPES)[number] }>
 
 // そのまま画面のコマンドとして通す指示と、その項目の形
-type Field = 'ids' | 'id' | 'length' | 'number' | 'object' | 'array' | 'links' | 'points' | 'site'
+type Field = 'ids' | 'id' | 'length' | 'number' | 'object' | 'array' | 'point' | 'links' | 'points' | 'site'
 const PASS = {
   move: { ids: 'ids', dx: 'length', dy: 'length' },
   rotate: { ids: 'ids', quarterTurns: 'number' },
+  rotateAbout: { ids: 'ids', quarterTurns: 'number', pivot: 'point' },
   remove: { ids: 'ids' },
   update: { ids: 'ids', changes: 'object' },
   updateAisle: { ids: 'ids', changes: 'object' },
@@ -189,6 +190,8 @@ function checkField(v: unknown, f: Field): string | null {
         v.every((l) => typeof l === 'object' && l !== null && typeof l.from === 'string' && typeof l.to === 'string')
         ? null
         : '{ "from", "to" } の配列にしてください'
+    case 'point':
+      return checkPoints([v]) ? '点 { "x", "y" } にしてください' : null
     case 'points':
       return checkPoints(v)
     case 'site':
@@ -287,6 +290,8 @@ export function describeCommand(scene: Scene, cmd: Command): string {
       return `${eqNames(cmd.ids)} を動かす（x ${signed(cmd.dx)}・y ${signed(cmd.dy)}）`
     case 'rotate':
       return `${eqNames(cmd.ids)} を${cmd.quarterTurns >= 0 ? '時計回り' : '反時計回り'}に ${Math.abs(cmd.quarterTurns) * 90}° 回す`
+    case 'rotateAbout':
+      return `${eqNames(cmd.ids)} をまとめて (${mm(cmd.pivot.x)}, ${mm(cmd.pivot.y)}) のまわりに${cmd.quarterTurns >= 0 ? '時計回り' : '反時計回り'}に ${Math.abs(cmd.quarterTurns) * 90}° 回す`
     case 'remove':
       return `${eqNames(cmd.ids)} を消す`
     case 'duplicate':

@@ -13,6 +13,7 @@ export type Command =
   | { type: 'add'; equipment: Equipment } // 設備を置く。id は呼ぶ側が決める（nextEquipmentId）
   | { type: 'move'; ids: string[]; dx: number; dy: number } // 設備をずらす（mm）
   | { type: 'rotate'; ids: string[]; quarterTurns: number } // 各設備の中心のまわりに 90 度 × n 回す。正が時計回り
+  | { type: 'rotateAbout'; ids: string[]; quarterTurns: number; pivot: Point } // 設備をまとめて pivot のまわりに 90 度 × n 回す（中心の位置も向きも回る。ユニットごと回すのに使う）。正が時計回り
   | { type: 'remove'; ids: string[] } // 設備を消す。その設備につないだつなぎも消す
   | { type: 'duplicate'; ids: string[]; newIds: string[]; dx: number; dy: number } // 設備を写して dx, dy ずらして置く。新しい id は呼ぶ側が決め、ids と同じ順に並べる。写した設備どうしのつなぎも写す
   | { type: 'update'; ids: string[]; changes: EquipmentChanges } // 置いた設備の名前・寸法・色・余白を変える。寸法を変えても外接の長方形の左上と回転は動かさない
@@ -49,6 +50,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return move(scene, cmd.ids, cmd.dx, cmd.dy)
     case 'rotate':
       return rotate(scene, cmd.ids, cmd.quarterTurns)
+    case 'rotateAbout':
+      return rotateAbout(scene, cmd.ids, cmd.quarterTurns, cmd.pivot)
     case 'remove':
       return remove(scene, cmd.ids)
     case 'duplicate':
@@ -165,6 +168,28 @@ function remove(scene: Scene, ids: string[]): CommandResult {
 }
 
 // 写しは元の設備の並び順のまま末尾に足す。名前は番号の続きにする（duplicateName）
+function rotateAbout(scene: Scene, ids: string[], quarterTurns: number, pivot: Point): CommandResult {
+  const bad = checkIds(scene, ids)
+  if (bad) return fail(bad)
+  if (!Number.isInteger(quarterTurns)) return fail('回す量は 90 度の整数倍です')
+  if (typeof pivot !== 'object' || pivot === null || !Number.isFinite(pivot.x) || !Number.isFinite(pivot.y)) return fail('回す中心（pivot）が点ではありません')
+  const q = ((quarterTurns % 4) + 4) % 4
+  // 画面は y が下向きなので、時計回りの 90 度は (dx, dy) → (-dy, dx)
+  const spin = (dx: number, dy: number): [number, number] => {
+    let [x, y] = [dx, dy]
+    for (let i = 0; i < q; i++) [x, y] = [-y, x]
+    return [x, y]
+  }
+  const turn = (r: Rotation): Rotation => ROTATIONS[(r / 90 + q) % 4]!
+  return {
+    ok: true,
+    scene: updateEach(scene, ids, (e) => {
+      const [dx, dy] = spin(e.x - pivot.x, e.y - pivot.y)
+      return { ...e, x: pivot.x + dx, y: pivot.y + dy, rotation: turn(e.rotation) }
+    }),
+  }
+}
+
 function duplicate(scene: Scene, ids: string[], newIds: string[], dx: number, dy: number): CommandResult {
   const bad = checkIds(scene, ids)
   if (bad) return fail(bad)

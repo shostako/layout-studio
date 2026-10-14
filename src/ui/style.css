@@ -217,6 +217,7 @@ body {
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin: 6px 0;
 }
@@ -279,6 +280,18 @@ body {
 .equipment.selected rect {
   stroke: var(--axes);
   stroke-width: 3;
+}
+.equipment.unit-member rect {
+  stroke: var(--axes);
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+}
+.unit-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .equipment.outside rect {
   stroke: #d32f2f;

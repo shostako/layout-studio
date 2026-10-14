@@ -10,6 +10,7 @@ import { clearanceEquipment, findOverlaps, overlappingEquipment, type Overlap } 
 import { equipmentOutsideSite } from '../core/site'
 import { clearanceRect, createEmptyScene, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, worldClearance, type Clearance, type Equipment, type Rotation, type Scene } from '../core/scene'
 import { equipmentFromTemplate, findTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
+import { rotateWithUnits, unitsOf, withUnits } from '../core/unit'
 import { formatLength, type Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -19,6 +20,8 @@ const DRAG_THRESHOLD_PX = 3
 const TOUCH_SLOP_PX = 10
 // スナップしないときの矢印キー 1 回の移動量
 const NUDGE_NO_SNAP = 10
+// 「ユニットごと」の入り切りを覚えるキー（見る人の好み。シーンには入れない）
+const UNIT_MODE_KEY = 'layout-studio:unit-mode'
 
 // 背景の縮尺合わせなど、左クリックで図面の点を拾う道具。editor が左クリックと Esc を渡す
 export type Tool = {
@@ -146,9 +149,19 @@ export function mountEditor(canvas: Canvas): Editor {
   const scene = (): Scene => history.present
   const liveSelection = () => selected.filter((id) => scene().equipment.some((e) => e.id === id))
 
+  // ユニットごと: 基準の設備（成形機など）を動かす・回す・写すと、そのユニットの付帯設備も一緒に（見る人の好みで、ブラウザに覚える）
+  let unitMode = true
+  try {
+    unitMode = localStorage.getItem(UNIT_MODE_KEY) !== 'off'
+  } catch {
+    // 覚えておけないブラウザでは、開いている間だけ効く
+  }
+  const expand = (ids: string[]) => (unitMode ? withUnits(scene(), ids) : ids)
   const rotateSelection = (q: number) => {
     const ids = liveSelection()
-    if (ids.length) run({ type: 'rotate', ids, quarterTurns: q })
+    if (!ids.length) return
+    const cmd = unitMode ? rotateWithUnits(scene(), ids, q) : { type: 'rotate' as const, ids, quarterTurns: q }
+    if (cmd) run(cmd)
   }
   const removeSelection = () => {
     const ids = liveSelection()
@@ -157,15 +170,18 @@ export function mountEditor(canvas: Canvas): Editor {
   }
   // 選んだ設備を写し、まとめて囲む長方形の幅に余白の分を足して右に置く。写しを選び直すので、続けて押すと横に並ぶ。
   // 余白の分は、選んだ設備の左右の余白のうち最も広いもの（写しの本体が元の余白に入らず、余白どうしは重ねて共用する）
+  // ユニットごとなら、選んだ基準の設備のユニットも写す（写しは選んでいた設備の写しだけを選び直す）
   const duplicateSelection = () => {
-    const ids = liveSelection()
+    const picked = liveSelection()
+    const ids = expand(picked)
     const items = scene().equipment.filter((e) => ids.includes(e.id))
     const box = equipmentBounds(items)
     if (!box) return
     const gap = Math.max(0, ...items.map((e) => Math.max(worldClearance(e).left, worldClearance(e).right)))
     const order = items.map((e) => e.id)
     const newIds = nextEquipmentIds(scene(), order.length)
-    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width + gap, dy: 0 })) selected = newIds
+    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width + gap, dy: 0 }))
+      selected = order.flatMap((id, i) => (picked.includes(id) ? [newIds[i]!] : []))
     render()
   }
   // 欄に入った時点の選択を覚えておく。入力中にキャンバスで別の設備を選ぶと、
@@ -176,7 +192,7 @@ export function mountEditor(canvas: Canvas): Editor {
     if (ids.length) run({ type: 'update', ids, changes })
   }
   const nudge = (kx: number, ky: number) => {
-    const ids = liveSelection()
+    const ids = expand(liveSelection())
     const step = snap > 0 ? snap : NUDGE_NO_SNAP
     if (ids.length) run({ type: 'move', ids, dx: kx * step, dy: ky * step })
   }
@@ -278,8 +294,26 @@ export function mountEditor(canvas: Canvas): Editor {
   }
   const rotLeft = mkAction('⟲ 90°', '反時計回りに 90 度（Shift+R）', () => rotateSelection(-1))
   const rotRight = mkAction('⟳ 90°', '時計回りに 90 度（R）', () => rotateSelection(1))
+  const unitLabel = document.createElement('label')
+  unitLabel.className = 'unit-mode'
+  unitLabel.title = '基準の設備（成形機など）を動かす・回す・複製すると、つないだ付帯設備（ユニット）も一緒に動く。外すと選んだ設備だけ'
+  const unitBox = document.createElement('input')
+  unitBox.type = 'checkbox'
+  unitBox.checked = unitMode
+  unitBox.addEventListener('change', () => {
+    unitMode = unitBox.checked
+    try {
+      localStorage.setItem(UNIT_MODE_KEY, unitMode ? 'on' : 'off')
+    } catch {
+      // 覚えておけなくても、開いている間は効く
+    }
+    unitBox.blur()
+    render()
+  })
+  unitLabel.append(unitBox, 'ユニットごと')
   const dup = mkAction('複製', '選択中の設備を写して右隣に置く（余白の分だけ離す。Ctrl+D）', duplicateSelection)
   const del = mkAction('削除', '選択中の設備を消す（Delete）', removeSelection)
+  actions.append(unitLabel)
   // 選択中の設備の名前・寸法・色。値を確定したとき（change）に update のコマンドを 1 回出す
   const props = document.createElement('div')
   props.className = 'props'
@@ -456,8 +490,11 @@ export function mountEditor(canvas: Canvas): Editor {
     const overlaps = findOverlaps(placed ? { ...shown, equipment: [...shown.equipment, placed] } : shown)
     const overlapping = overlappingEquipment(overlaps)
     const inClearance = clearanceEquipment(overlaps)
+    // ユニットごとなら、選んだ基準の設備のユニットの付帯設備を、一緒に動くものとして薄く示す
+    const units = unitMode ? unitsOf(shown) : null
+    const members = new Set(units ? selected.flatMap((id) => units.get(id) ?? []).filter((id) => !sel.has(id)) : [])
     const cls = (eq: Equipment) =>
-      `${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}` +
+      `${sel.has(eq.id) ? ' selected' : ''}${members.has(eq.id) ? ' unit-member' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}` +
       `${inClearance.has(eq.id) ? ' in-clearance' : ''}`
     const all = placed ? [...shown.equipment, placed] : shown.equipment
     clearanceLayer.replaceChildren(...all.flatMap((eq) => drawClearance(eq, sel.has(eq.id) || eq === placed)))
@@ -675,7 +712,7 @@ export function mountEditor(canvas: Canvas): Editor {
         startClient: { x: e.clientX, y: e.clientY },
         startWorld: at,
         grabId: hit,
-        ids: [...selected],
+        ids: expand([...selected]),
         dx: 0,
         dy: 0,
         moved: false,
@@ -756,7 +793,7 @@ export function mountEditor(canvas: Canvas): Editor {
       startClient: { x: e.clientX, y: e.clientY },
       startWorld: at,
       grabId: hit,
-      ids: [...selected],
+      ids: expand([...selected]),
       dx: 0,
       dy: 0,
       moved: false,
