@@ -100,6 +100,22 @@ describe('attachUnit（付ける）', () => {
   })
 })
 
+describe('付け直しでの取出機の選び方', () => {
+  it('取出機が 2 台つないであれば、つなぎの順で先の 1 台で向きを決めて使い、もう 1 台は動かさない', () => {
+    let s = machine()
+    const t = findTemplate(INJECTION_PRESET, 'take-out-robot')!
+    // シーンの並びでは上の取出機が先だが、つなぎは下の取出機が先
+    s = run(s, { type: 'add', equipment: equipmentFromTemplate(t, { id: 'eq-2', name: '取出機 上', center: { x: 7500, y: 2500 } }) })
+    s = run(s, { type: 'add', equipment: equipmentFromTemplate(t, { id: 'eq-3', name: '取出機 下', center: { x: 10500, y: 4500 } }) })
+    s = run(s, { type: 'link', links: [{ from: 'eq-1', to: 'eq-3' }, { from: 'eq-1', to: 'eq-2' }] })
+    const after = attached(s)
+    expect(where(after)['取出機 下']).toEqual([10500, 4500, 0])
+    expect(where(after)['取出機 上']).toEqual([7500, 2500, 0])
+    // 下の取出機から決めたので、取り出し側は下、左へ並べる
+    expect(where(after)['型抜き機 1']).toEqual([8850, 6650, 0])
+  })
+})
+
 describe('付け直しでのストッカーと予備', () => {
   it('ストッカーが 2 台あれば、つなぎの順で先のものを主の位置に置く', () => {
     let s = attached(machine())

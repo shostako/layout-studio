@@ -61,6 +61,20 @@ const round = (v: number) => Math.round(v)
 type Frame = { anchor: Equipment; side: Side; toward: Side }
 
 // 取り出し側と並べる向きを決める（docs/layout-rules.md「取り出し側」）。渡された向きが基準の設備の向きに合わなければ断る
+// ユニットの中の同じ種類の設備を、つなぎの順（先につないだものから）に並べる。つないでいないものは後ろ（シーンの並び順）
+function byLinkOrder(scene: Scene, anchor: Equipment, members: Equipment[], kind: string): Equipment[] {
+  const order = (id: string) => {
+    const i = scene.links.findIndex((l) => l.to === id || (l.from === id && l.to === anchor.id))
+    return i < 0 ? Infinity : i
+  }
+  return members.filter((x) => x.kind === kind).sort((a, b) => order(a.id) - order(b.id))
+}
+
+// 決まりの載る設備のうち、使う 1 台（つなぎの順で先のもの）。向きの推定と付け直しで同じものを使う
+function mountedOf(scene: Scene, anchor: Equipment, members: Equipment[], recipe: UnitRecipe | undefined): Equipment | undefined {
+  return recipe?.mounted ? byLinkOrder(scene, anchor, members, recipe.mounted.kind)[0] : undefined
+}
+
 function frameFor(scene: Scene, anchor: Equipment, members: Equipment[], recipe: UnitRecipe | undefined, o: AttachOptions): Frame | string {
   const horizontal = isHorizontal(anchor)
   const across: Side[] = horizontal ? ['top', 'bottom'] : ['left', 'right']
@@ -70,8 +84,9 @@ function frameFor(scene: Scene, anchor: Equipment, members: Equipment[], recipe:
     return `${anchor.name}は${horizontal ? '横' : '縦'}向きなので、取り出し側は${across.map((s) => SIDE_NAME[s]).join('か')}です`
   if (o.toward !== undefined && !along.includes(o.toward))
     return `${anchor.name}は${horizontal ? '横' : '縦'}向きなので、並べる向きは${along.map((s) => SIDE_NAME[s]).join('か')}です`
-  const robot = recipe?.mounted ? members.find((m) => m.kind === recipe.mounted!.kind) : undefined
-  const rest = members.filter((m) => m !== robot)
+  const robot = mountedOf(scene, anchor, members, recipe)
+  // 後工程は、載る設備（どれも）を除いたもの
+  const rest = members.filter((m) => !(recipe?.mounted && m.kind === recipe.mounted.kind))
   const mean = (list: Equipment[], v: Point) => list.reduce((a, m) => a + dot({ x: m.x - c.x, y: m.y - c.y }, v), 0) / Math.max(1, list.length)
   // 取り出し側: 渡された側 → 載る設備が張り出している側 → 後工程がある側 → 横は下・縦は右
   let side = o.side
@@ -159,12 +174,8 @@ export function attachUnit(scene: Scene, anchorId: string, o: AttachOptions = {}
   const used = new Set<string>()
   // 同じ種類が多ければ、つなぎの順で先のものから使う（余った分は動かさない）。溜める設備（ストッカーと予備）もこの順で、
   // 先のものを主に使う（再生は先のつなぎから満杯まで入れるため、主と予備を入れ替えない）
-  const linkOrder = (id: string) => {
-    const i = scene.links.findIndex((l) => l.to === id || (l.from === id && l.to === anchor.id))
-    return i < 0 ? Infinity : i
-  }
   const take = (kind: string) => {
-    const m = members.filter((x) => x.kind === kind && !used.has(x.id)).sort((a, b) => linkOrder(a.id) - linkOrder(b.id))[0]
+    const m = byLinkOrder(scene, anchor, members, kind).find((x) => !used.has(x.id))
     if (m) used.add(m.id)
     return m
   }
@@ -242,7 +253,7 @@ export function arrangeUnit(scene: Scene, anchorId: string): AttachResult {
   if (!memberIds) return { ok: false, error: `${anchor.name}は基準の設備ではありません` }
   const recipe = recipeFor(scene, anchor)
   const members = memberIds.map((id) => scene.equipment.find((e) => e.id === id)!)
-  const robot = recipe?.mounted ? (members.find((m) => m.kind === recipe.mounted!.kind) ?? null) : null
+  const robot = mountedOf(scene, anchor, members, recipe) ?? null
   // 載る設備（役割が mounted）は基準の上にあるので、列には入れない
   const mounted = new Set(members.filter((m) => findTemplate(scene.templates, m.kind)?.role === 'mounted').map((m) => m.id))
   const row = members.filter((m) => !mounted.has(m.id))

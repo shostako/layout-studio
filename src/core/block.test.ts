@@ -50,6 +50,11 @@ describe('placeBlock（並べる）', () => {
     expect(equipmentBounds(added)!.x).toBeGreaterThan(before.x + before.width)
   })
 
+  it('台数を列に均等に分ける（10 台 4 列は 3・3・2・2、6 台 4 列も 4 列）', () => {
+    expect(describeLayout(placed(createEmptyScene(), { count: 10, columns: 4, origin: { x: 0, y: 0 } }))).toBe('成形機 10 台（横 4 列: 3・3・2・2）')
+    expect(describeLayout(placed(createEmptyScene(), { count: 6, columns: 4, origin: { x: 0, y: 0 } }))).toBe('成形機 6 台（横 4 列: 2・2・1・1）')
+  })
+
   it('台数・列・種類の不正を断る', () => {
     const s = createEmptyScene()
     expect(placeBlock(s, { count: 0 })).toMatchObject({ ok: false })

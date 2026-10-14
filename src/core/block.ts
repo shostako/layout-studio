@@ -89,13 +89,15 @@ export function placeBlock(scene: Scene, o: BlockOptions): BlockResult {
   // 基準の設備の中心 = 左上 − 1 台ぶんの外接の長方形の左上（原点に置いた基準の設備からの位置）
   const first = { x: Math.round(origin.x - box.x), y: Math.round(origin.y - box.y) }
 
-  const perColumn = Math.ceil(count / columns)
+  // 台数を列に分ける。前の列から 1 台ずつ多く（10 台 4 列なら 3・3・2・2）
+  const base = Math.floor(count / columns)
+  const extra = count % columns
+  const sizes = Array.from({ length: columns }, (_, c) => base + (c < extra ? 1 : 0))
+  const slots = sizes.flatMap((n, c) => Array.from({ length: n }, (_, k) => ({ c, k })))
   let work = scene
   const commands: Command[] = []
   const anchors: string[] = []
-  for (let i = 0; i < count; i++) {
-    const c = Math.floor(i / perColumn)
-    const k = i % perColumn
+  for (const { c, k } of slots) {
     const at = { x: first.x + c * across.x + k * stack.x, y: first.y + c * across.y + k * stack.y }
     const u = oneUnit(work, t, at, rotation, o)
     if (typeof u === 'string') return { ok: false, error: u }
@@ -103,7 +105,7 @@ export function placeBlock(scene: Scene, o: BlockOptions): BlockResult {
     commands.push(...u.commands)
     anchors.push(u.anchor)
   }
-  const used = Math.ceil(count / perColumn)
+  const used = sizes.filter((n) => n > 0).length
   return {
     ok: true,
     command: { type: 'batch', commands },
