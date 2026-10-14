@@ -146,6 +146,18 @@ describe('付け直しでのストッカーの順（ユニットの外からの�
   })
 })
 
+describe('付け直しでのストッカーの順（ユニットの中のほかのつなぎ）', () => {
+  it('トリミング機から出るつなぎの順で主と予備を決める（取出機 → 予備のような別のつなぎは数えない）', () => {
+    let s = attached(machine())
+    const id = (n: string) => s.equipment.find((e) => e.name === n)!.id
+    s = { ...s, links: [{ from: id('取出機 1'), to: id('台車ストッカー 1 予備') }, ...s.links] }
+    const after = attached(s)
+    expect(where(after)['台車ストッカー 1']).toEqual([4700, 6650, 0])
+    expect(where(after)['台車ストッカー 1 予備']).toEqual([3000, 6650, 0])
+    expect(after.links.some((l) => l.from === id('取出機 1') && l.to === id('台車ストッカー 1 予備'))).toBe(false)
+  })
+})
+
 describe('付け直しでの余った設備', () => {
   it('余った設備を回る遠回りのつなぎがあっても輪にならない（ユニットの中の決まりと違うつなぎは外す）', () => {
     let s = attached(machine())

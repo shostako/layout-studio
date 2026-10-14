@@ -201,10 +201,23 @@ export function attachUnit(scene: Scene, anchorId: string, o: AttachOptions = {}
   }
   const robot = recipe.mounted ? (take(recipe.mounted.kind) ?? make(recipe.mounted.kind)) : null
   const chain = recipe.chain.map((k) => take(k) ?? make(k))
+  // 溜める設備（ストッカーと予備）は、決まりで前に来る設備（列の最後。射出成形ならトリミング機）から出るつなぎの順で使う。
+  // 再生はその設備から出るつなぎの順に満杯まで入れるので、主と予備の位置が入れ替わらない。そこからつないでいないものは後ろ
+  const pred = chain.length ? chain[chain.length - 1]! : (robot ?? anchor)
+  const fromPred = (id: string) => {
+    const i = scene.links.findIndex((l) => l.from === pred?.id && l.to === id)
+    return i < 0 ? Infinity : i
+  }
+  const takeBuffer = (kind: string) => {
+    const list = byLinkOrder(scene, anchor, members, kind).filter((x) => !used.has(x.id))
+    const m = [...list].sort((a, b) => fromPred(a.id) - fromPred(b.id))[0]
+    if (m) used.add(m.id)
+    return m
+  }
   const buffers: (Equipment | null)[] = []
   for (const [i, k] of recipe.buffers.entries()) {
     const first = buffers[0]
-    buffers.push(take(k) ?? make(k, i > 0 && first ? `${first.name} 予備` : undefined))
+    buffers.push(takeBuffer(k) ?? make(k, i > 0 && first ? `${first.name} 予備` : undefined))
   }
   if (missing.length)
     return { ok: false, error: `設備の種類が一覧にありません: ${[...new Set(missing)].join(', ')}（「設備の種類を編集」で射出成形の組を足してください）` }
