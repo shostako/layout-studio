@@ -2,6 +2,7 @@
 // 外形は頂点の列（mm）で持ち、最後の頂点と最初の頂点を結んで閉じる。向き（時計回りか）は問わない。
 
 import { backgroundRect } from './background'
+import { aislePieces } from './overlap'
 import { equipmentBounds, footprint, type Scene } from './scene'
 import type { Point, Rect } from './viewport'
 
@@ -165,14 +166,15 @@ export function sceneExtent(scene: Scene): Rect | null {
   if (scene.site) rects.push(siteBounds(scene.site))
   const eq = equipmentBounds(scene.equipment)
   if (eq) rects.push(eq)
+  // 通路は描いた形（角の尖り＝マイター継ぎを含む）の頂点で囲む。頂点を幅の半分だけ広げるだけでは、鋭い角の先が外に出る
   for (const a of scene.aisles) {
-    if (a.points.length === 0) continue
-    const half = a.width / 2
-    const xs = a.points.map((p) => p.x)
-    const ys = a.points.map((p) => p.y)
-    const x = Math.min(...xs) - half
-    const y = Math.min(...ys) - half
-    rects.push({ x, y, width: Math.max(...xs) + half - x, height: Math.max(...ys) + half - y })
+    const pts = aislePieces(a).flat()
+    if (pts.length === 0) continue
+    const xs = pts.map((p) => p.x)
+    const ys = pts.map((p) => p.y)
+    const x = Math.min(...xs)
+    const y = Math.min(...ys)
+    rects.push({ x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y })
   }
   if (rects.length === 0) return null
   const x = Math.min(...rects.map((r) => r.x))

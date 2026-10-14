@@ -166,8 +166,14 @@ describe('sceneExtent（「全体」で見せる範囲）', () => {
       equipment: [eq('E1', { x: 50000, y: 40000, width: 2000, depth: 1000 })],
       aisles: [{ id: 'A1', name: '通路', width: 1000, closed: false, points: [{ x: 60000, y: 30000 }, { x: 60000, y: 45000 }] }],
     }
-    // 設備 49000〜51000 × 39500〜40500、通路 59500〜60500 × 29500〜45500
-    expect(sceneExtent(scene)).toEqual({ x: 49000, y: 29500, width: 11500, height: 16000 })
+    // 設備 49000〜51000 × 39500〜40500、通路 59500〜60500 × 30000〜45000（端は切りっぱなし）
+    expect(sceneExtent(scene)).toEqual({ x: 49000, y: 30000, width: 11500, height: 15000 })
+  })
+  it('通路の鋭い角の尖りも囲む', () => {
+    // 右へ行って 120 度曲がる。角の尖りは頂点から右へ 500 × tan 60° ≒ 866 mm 出る（幅の半分 500 mm より外）
+    const a = { id: 'A1', name: '通路', width: 1000, closed: false, points: [{ x: 0, y: 0 }, { x: 10000, y: 0 }, { x: 5000, y: 8660 }] }
+    const r = sceneExtent({ ...createEmptyScene(), aisles: [a] })!
+    expect(r.x + r.width).toBeCloseTo(10866, 0)
   })
   it('敷地と遠くの設備を両方囲む', () => {
     const scene: Scene = { ...createEmptyScene(), site: rectSite(0, 0, 10000, 5000), equipment: [eq('E1', { x: 100000, y: 2500, width: 2000, depth: 1000 })] }
