@@ -1,7 +1,7 @@
 // レイアウト: 基準の設備（射出成形の組では成形機）の並び。案はどれか 1 つのレイアウトに属する（DECISIONS.md 2026-10-14）。DOM に触らない。
 // 並びは、基準の設備の種類ごとに、向き（横・縦）ごとの列と、列ごとの台数で表す（signature）。
 // 列は、設備を短い辺の向きに積んだ並び（例の「7 台 1 列」は横の成形機を上下に 7 台）。横の設備は中心の x、縦の設備は中心の y を
-// 小さい順に並べ、隣どうしの差が短い辺の半分（両方の小さい方）を超えたところで次の列にする。
+// 小さい順に並べ、隣どうしの差が COLUMN_GAP を超えたところで次の列にする（寸法を変えただけで列の分かれ方が変わらないよう、決まった値）。
 // 横と縦が両方あれば、横の群と縦の群の位置の関係（左右・上下）も並びに入れる。
 // 台数・向き・列の分かれ方（と縦横の関係）が同じなら同じ並び（間隔を詰めた・列ごと寄せたは同じ）。
 
@@ -11,24 +11,23 @@ import { isAnchor } from './unit'
 
 type Rows = number[] // 列ごとの台数（列の並びの順）
 
+// 同じ列とみなす中心の差（mm）。縦横の群の位置の関係で「同じ」とみなす差にも使う
+export const COLUMN_GAP = 1000
+
 function rows(items: Equipment[], horizontal: boolean): Rows {
   const key = (e: Equipment) => (horizontal ? e.x : e.y)
-  const short = (e: Equipment) => {
-    const f = footprint(e)
-    return Math.min(f.width, f.height)
-  }
   const sorted = [...items].sort((a, b) => key(a) - key(b))
   const out: Rows = []
   let prev: Equipment | null = null
   for (const e of sorted) {
-    if (prev && key(e) - key(prev) <= Math.min(short(e), short(prev)) / 2) out[out.length - 1]! += 1
+    if (prev && key(e) - key(prev) <= COLUMN_GAP) out[out.length - 1]! += 1
     else out.push(1)
     prev = e
   }
   return out
 }
 
-// 横の群と縦の群の位置の関係（中心の平均の左右・上下）。L＝横が左、R＝横が右、U＝横が上、D＝横が下、=＝差が短い辺の半分以内
+// 横の群と縦の群の位置の関係（中心の平均の左右・上下）。L＝横が左、R＝横が右、U＝横が上、D＝横が下、=＝差が COLUMN_GAP 以内
 type Relation = string
 
 type Arrangement = { kind: string; name: string; h: Rows; v: Rows; rel: Relation }[]
@@ -36,10 +35,9 @@ type Arrangement = { kind: string; name: string; h: Rows; v: Rows; rel: Relation
 function relation(hs: Equipment[], vs: Equipment[]): Relation {
   if (!hs.length || !vs.length) return ''
   const mean = (list: Equipment[], k: 'x' | 'y') => list.reduce((a, e) => a + e[k], 0) / list.length
-  const tol = Math.min(...[...hs, ...vs].map((e) => Math.min(footprint(e).width, footprint(e).height))) / 2
   const cmp = (k: 'x' | 'y', lo: string, hi: string) => {
     const d = mean(hs, k) - mean(vs, k)
-    return Math.abs(d) <= tol ? '=' : d < 0 ? lo : hi
+    return Math.abs(d) <= COLUMN_GAP ? '=' : d < 0 ? lo : hi
   }
   return cmp('x', 'L', 'R') + cmp('y', 'U', 'D')
 }

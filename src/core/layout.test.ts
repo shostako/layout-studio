@@ -38,7 +38,7 @@ describe('layoutSignature と describeLayout', () => {
 
   it('列の中で少しずれても、間隔を詰めても同じ並び。列を分けるほど動かすと別の並び', () => {
     const base = layoutSignature(scene(row(3, 0)))
-    const nudged = row(3, 0).map((e, i) => ({ ...e, y: e.y - i * 500, x: e.x + (i === 1 ? 1300 : 0) }))
+    const nudged = row(3, 0).map((e, i) => ({ ...e, y: e.y - i * 500, x: e.x + (i === 1 ? 900 : 0) }))
     expect(layoutSignature(scene(nudged))).toBe(base)
     const split = row(3, 0).map((e, i) => ({ ...e, x: i === 2 ? 1500 : 0 }))
     expect(layoutSignature(scene(split))).toBe('molding-machine:H2,1;V')
@@ -52,6 +52,12 @@ describe('layoutSignature と describeLayout', () => {
     expect(layoutSignature(scene([...row(3, 30000), ...v(0)]))).not.toBe(layoutSignature(right))
     // 少し寄せただけなら同じ
     expect(layoutSignature(scene([...row(3, 0), ...v(18000)]))).toBe(layoutSignature(right))
+  })
+
+  it('寸法を変えても列の分かれ方は変わらない', () => {
+    const two = row(2, 0).map((e, i) => ({ ...e, x: i * 900 }))
+    expect(layoutSignature(scene(two))).toBe('molding-machine:H2;V')
+    expect(layoutSignature(scene(two.map((e) => ({ ...e, depth: 2000 }))))).toBe('molding-machine:H2;V')
   })
 
   it('列の分け方はたどる順に依らない（0・1000・2000 は 1 列）', () => {
