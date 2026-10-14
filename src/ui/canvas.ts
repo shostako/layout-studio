@@ -1,7 +1,8 @@
-// 図面のキャンバス。SVG にグリッドを描き、拡大縮小と移動を受ける。
+// 図面のキャンバス。SVG にマス目を描き、拡大縮小と移動を受ける。
 // 表示範囲の計算は src/core/viewport.ts の純関数に任せ、ここでは結果を受け取って描くだけにする。
 import {
   fitRect,
+  fixedGridStep,
   formatLength,
   gridLines,
   gridStep,
@@ -10,6 +11,7 @@ import {
   screenToWorld,
   worldToScreen,
   zoomAt,
+  type GridStep,
   type Point,
   type Rect,
   type Size,
@@ -18,7 +20,7 @@ import {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-// 最初に見せる範囲（架空の 20 m × 15 m）。背景の図面が入ったら setHome でそちらに合わせる
+// 描いたものが何も無いときに「全体」で見せる範囲（架空の 20 m × 15 m）
 const DEFAULT_HOME: Rect = { x: 0, y: 0, width: 20000, height: 15000 }
 
 // ホイール 1 目盛り（deltaY = 100）で 1.2 倍
@@ -29,6 +31,15 @@ function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
   const el = document.createElementNS(SVG_NS, tag)
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v)
   return el
+}
+
+// 道具バーの下に出すマス目の説明。自動か、決めた大きさか、縮小して間引いているか
+function gridText(cell: number, step: GridStep, thinned: boolean | null): string {
+  const minor = formatLength(step.minor)
+  const major = formatLength(step.major)
+  if (thinned === null) return `${minor}（自動、太線 ${major}）`
+  if (thinned) return `${formatLength(cell)}（縮小中は ${minor} ごとに表示）`
+  return `${minor}（太線 ${major}）`
 }
 
 export type Canvas = {
@@ -45,10 +56,13 @@ export type Canvas = {
   toWorld(clientX: number, clientY: number): Point
   // Space を押している間の左ボタンは画面の移動に使う
   isPanKeyDown(): boolean
-  // 「全体」で見せる範囲を変える（null で最初の範囲に戻す）。表示はまだ動かさない
-  setHome(rect: Rect | null): void
-  // 「全体」の範囲を画面に収める
+  // 「全体」で見せる範囲の求め方（背景・敷地・設備・通路を囲む長方形。null なら最初の範囲）。表示はまだ動かさない
+  setHomeSource(source: () => Rect | null): void
+  // 「全体」の範囲を画面の中央に収める
   fitHome(): void
+  // マス目の大きさ（mm）。0 は自動
+  gridCell(): number
+  setGridCell(cell: number): void
   // この指（タッチの pointerId）のドラッグで画面を動かす。from は指を置いた所（clientX, clientY）で、
   // 次の指の動きから、置いた所からの動き全部を画面に移す。editor が、指が触って離すより大きく動いたときに呼ぶ
   beginPan(pointerId: number, from: Point): void
@@ -93,8 +107,10 @@ export function mountCanvas(root: HTMLElement): Canvas {
     return { width: Math.max(1, r.width), height: Math.max(1, r.height) }
   }
 
-  let homeRect: Rect = DEFAULT_HOME
-  let view: Viewport = fitRect(homeRect, size())
+  let homeSource: () => Rect | null = () => null
+  const homeRect = (): Rect => homeSource() ?? DEFAULT_HOME
+  let view: Viewport = fitRect(homeRect(), size())
+  let cell = 0
   // 使う人が一度も動かしていない間は、窓の大きさが決まるたびに最初の範囲へ合わせ直す
   let touched = false
   let cursor: Point | null = null
@@ -112,7 +128,8 @@ export function mountCanvas(root: HTMLElement): Canvas {
   function draw() {
     frame = 0
     const s = size()
-    const step = gridStep(view.scale)
+    const fixed = cell > 0 ? fixedGridStep(cell, view.scale) : null
+    const step = fixed ?? gridStep(view.scale)
     const lines = gridLines(view, s, step)
     // 画面の座標で 1 px の線をくっきり引くため、整数に丸めて 0.5 px ずらす
     const sx = (x: number) => Math.round((x - view.originX) * view.scale) + 0.5
@@ -128,7 +145,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
     underlay.setAttribute('transform', m)
     const pos = cursor ? `x ${Math.round(cursor.x)} mm, y ${Math.round(cursor.y)} mm` : '—'
     status.textContent =
-      `${pos}　｜　グリッド ${formatLength(step.minor)}（太線 ${formatLength(step.major)}）` +
+      `${pos}　｜　マス目 ${gridText(cell, step, fixed ? fixed.thinned : null)}` +
       `　｜　1 m = ${Number((view.scale * 1000).toPrecision(3))} px`
   }
 
@@ -138,11 +155,11 @@ export function mountCanvas(root: HTMLElement): Canvas {
   }
   const zoomIn = () => setView(zoomAt(view, center(), BUTTON_ZOOM))
   const zoomOut = () => setView(zoomAt(view, center(), 1 / BUTTON_ZOOM))
-  const home = () => setView(fitRect(homeRect, size()))
+  const home = () => setView(fitRect(homeRect(), size()))
 
   mkButton('＋', '拡大（+ キー）', zoomIn)
   mkButton('－', '縮小（- キー）', zoomOut)
-  mkButton('全体', '図面の全体を表示（0 キー）', home)
+  mkButton('全体', '背景・敷地・置いた設備・通路の全体を画面の中央に収める（0 キーか Home キー）', home)
   const help = document.createElement('span')
   help.className = 'help'
   help.textContent = 'ホイール: 拡大縮小　中・右ボタンか Space＋左ボタンのドラッグ: 画面の移動'
@@ -276,7 +293,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
     if (e.ctrlKey || e.metaKey || e.altKey) return
     if (e.key === '+' || e.key === ';') zoomIn()
     else if (e.key === '-') zoomOut()
-    else if (e.key === '0') home()
+    else if (e.key === '0' || e.key === 'Home') home()
   })
   window.addEventListener('keyup', (e) => {
     if (e.code === 'Space') releaseSpace()
@@ -286,7 +303,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
 
   // 窓の大きさが変わっても、左上の図面座標と倍率はそのまま
   new ResizeObserver(() => {
-    if (!touched) view = fitRect(homeRect, size())
+    if (!touched) view = fitRect(homeRect(), size())
     redraw()
   }).observe(svgEl)
 
@@ -308,9 +325,14 @@ export function mountCanvas(root: HTMLElement): Canvas {
     },
     touchCount: () => touches.size,
     onPinch: (f) => pinchListeners.push(f),
-    setHome: (rect) => {
-      homeRect = rect ?? DEFAULT_HOME
+    setHomeSource: (source) => {
+      homeSource = source
     },
     fitHome: home,
+    gridCell: () => cell,
+    setGridCell: (c) => {
+      cell = c
+      redraw()
+    },
   }
 }

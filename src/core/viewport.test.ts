@@ -5,6 +5,7 @@ import {
   fitRect,
   formatLength,
   gridLines,
+  fixedGridStep,
   gridStep,
   panBy,
   pinchView,
@@ -129,6 +130,19 @@ describe('gridStep', () => {
       expect(minor * s).toBeGreaterThanOrEqual(10 - 1e-9)
       expect(minor * s).toBeLessThan(25 + 1e-9)
     }
+  })
+})
+
+describe('fixedGridStep', () => {
+  it('マス目の大きさを決めたら、その間隔で引き、太線は 10 マスごと', () => {
+    // 0.1 px/mm で 100 mm は 10 px
+    expect(fixedGridStep(100, 0.1)).toEqual({ minor: 100, major: 1000, thinned: false })
+  })
+  it('縮小して細かくなりすぎたら 10 倍ずつ間引く', () => {
+    // 0.01 px/mm で 100 mm は 1 px → 1000 mm（10 px）
+    expect(fixedGridStep(100, 0.01)).toEqual({ minor: 1000, major: 10000, thinned: true })
+    // 0.002 px/mm で 10 mm → 10000 mm（20 px）
+    expect(fixedGridStep(10, 0.002)).toEqual({ minor: 10000, major: 100000, thinned: true })
   })
 })
 
