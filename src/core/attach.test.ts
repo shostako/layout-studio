@@ -100,6 +100,20 @@ describe('attachUnit（付ける）', () => {
   })
 })
 
+describe('付け直しでのストッカーと予備', () => {
+  it('ストッカーが 2 台あれば、つなぎの順で先のものを主の位置に置く', () => {
+    let s = attached(machine())
+    const id = (n: string) => s.equipment.find((e) => e.name === n)!.id
+    const trim = id('トリミング機 1')
+    // 主へのつなぎを外して付け直し、予備へのつなぎを先にする
+    s = run(s, { type: 'unlink', links: [{ from: trim, to: id('台車ストッカー 1') }] })
+    s = run(s, { type: 'link', links: [{ from: trim, to: id('台車ストッカー 1') }] })
+    s = attached(s)
+    expect(where(s)['台車ストッカー 1 予備']).toEqual([4700, 6650, 0])
+    expect(where(s)['台車ストッカー 1']).toEqual([3000, 6650, 0])
+  })
+})
+
 describe('arrangeUnit（整える）', () => {
   const nudge = (s: Scene, name: string, dx: number, dy: number) => run(s, { type: 'move', ids: [s.equipment.find((e) => e.name === name)!.id], dx, dy })
 

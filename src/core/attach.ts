@@ -177,10 +177,20 @@ export function attachUnit(scene: Scene, anchorId: string, o: AttachOptions = {}
   }
   const robot = recipe.mounted ? (take(recipe.mounted.kind) ?? make(recipe.mounted.kind)) : null
   const chain = recipe.chain.map((k) => take(k) ?? make(k))
+  // 溜める設備（ストッカーと予備）は、つなぎの順で先のものを主に使う（再生は先のつなぎから満杯まで入れるため、主と予備を入れ替えない）
+  const linkOrder = (id: string) => {
+    const i = scene.links.findIndex((l) => l.to === id)
+    return i < 0 ? Infinity : i
+  }
+  const takeBuffer = (kind: string) => {
+    const m = members.filter((x) => x.kind === kind && !used.has(x.id)).sort((a, b) => linkOrder(a.id) - linkOrder(b.id))[0]
+    if (m) used.add(m.id)
+    return m
+  }
   const buffers: (Equipment | null)[] = []
   for (const [i, k] of recipe.buffers.entries()) {
     const first = buffers[0]
-    buffers.push(take(k) ?? make(k, i > 0 && first ? `${first.name} 予備` : undefined))
+    buffers.push(takeBuffer(k) ?? make(k, i > 0 && first ? `${first.name} 予備` : undefined))
   }
   if (missing.length)
     return { ok: false, error: `設備の種類が一覧にありません: ${[...new Set(missing)].join(', ')}（「設備の種類を編集」で射出成形の組を足してください）` }
