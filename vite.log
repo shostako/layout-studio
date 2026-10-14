@@ -4,3 +4,4 @@
   ➜  Local:   http://localhost:5179/
   ➜  Network: use --host to expose
 11:32:00 AM [vite] (client) page reload src/ui/editor.ts
+11:35:46 AM [vite] (client) page reload src/ui/canvas.ts
