@@ -50,6 +50,8 @@ export type Editor = {
   onReset(listener: () => void): void
   // 今のスナップの間隔（mm、0 はスナップしない）。敷地の頂点を拾うときにも使う
   snapStep(): number
+  // スナップの間隔を変える（SNAP_STEPS のどれか）。道具バーの選択も合わせる
+  setSnapStep(step: number): void
   // 選択中の設備の id
   selection(): string[]
   // 設備の選択を変える
@@ -413,6 +415,7 @@ export function mountEditor(canvas: Canvas): Editor {
   const undoBtn = mkTool('元に戻す', '元に戻す（Ctrl+Z）', doUndo)
   const redoBtn = mkTool('やり直す', 'やり直す（Ctrl+Y / Ctrl+Shift+Z）', doRedo)
   const snapLabel = document.createElement('label')
+  snapLabel.className = 'snap-label'
   snapLabel.textContent = 'スナップ '
   const snapSelect = document.createElement('select')
   for (const s of SNAP_STEPS) {
@@ -422,7 +425,7 @@ export function mountEditor(canvas: Canvas): Editor {
     snapSelect.append(o)
   }
   snapSelect.value = String(snap)
-  snapSelect.title = '設備の外形の左上をこの間隔のグリッドに合わせる'
+  snapSelect.title = '設備の外形の左上を、この間隔の点に合わせる（マス目の表示とは別）'
   snapSelect.addEventListener('change', () => {
     snap = Number(snapSelect.value)
     snapSelect.blur()
@@ -953,6 +956,12 @@ export function mountEditor(canvas: Canvas): Editor {
     restore,
     onReset: (f) => resetListeners.push(f),
     snapStep: () => snap,
+    setSnapStep: (step) => {
+      if (!SNAP_STEPS.includes(step)) return
+      snap = step
+      snapSelect.value = String(step)
+      render()
+    },
     selection: () => liveSelection(),
     select: (ids) => {
       selected = ids

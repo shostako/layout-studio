@@ -3,7 +3,7 @@
 import type { Canvas } from './canvas'
 import type { Editor, Tool } from './editor'
 import { snapValue } from '../core/placement'
-import { equipmentOutsideSite, rectSite, sceneExtent, siteArea, siteBounds, type Site } from '../core/site'
+import { equipmentOutsideSite, rectSite, siteArea, siteBounds, type Site } from '../core/site'
 import { formatLength, type Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -91,7 +91,6 @@ export function mountSite(canvas: Canvas, editor: Editor): void {
   h.after(box)
 
   const fit = () => {
-    canvas.setHome(sceneExtent(editor.scene()))
     canvas.fitHome()
   }
   rectForm.addEventListener('submit', (e) => {
@@ -216,8 +215,6 @@ export function mountSite(canvas: Canvas, editor: Editor): void {
     if (site !== drawn) {
       drawn = site
       outline.setAttribute('d', site ? pathOf(site.points, true) : '')
-      // 元に戻すで敷地が変わっても「全体」が合うようにする（表示は動かさない）
-      canvas.setHome(sceneExtent(scene))
     }
     outline.style.display = site ? '' : 'none'
     if (site) {

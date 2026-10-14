@@ -8,11 +8,13 @@ import { mountCanvas } from './ui/canvas'
 import { mountCompare } from './ui/compare'
 import { mountEditor } from './ui/editor'
 import { mountFlow } from './ui/flow'
+import { mountGrid } from './ui/grid'
 import { mountLive } from './ui/live'
 import { mountPlans } from './ui/plans'
 import { mountPlayback } from './ui/playback'
 import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
+import { sceneExtent } from './core/site'
 import { mountExportImage } from './ui/exportImage'
 import { applySavedTheme, mountMonochrome, mountTheme } from './ui/theme'
 import { mountTemplates } from './ui/templates'
@@ -23,6 +25,9 @@ const app = document.getElementById('app')
 if (app) {
   const canvas = mountCanvas(app)
   const editor = mountEditor(canvas)
+  // 「全体」（0 キー）はその時のシーンの背景・敷地・設備・通路を囲む範囲に合わせる
+  canvas.setHomeSource(() => sceneExtent(editor.scene()))
+  mountGrid(canvas, editor)
   mountTemplates(canvas, editor)
   mountBlock(canvas, editor)
   mountAttach(canvas, editor)

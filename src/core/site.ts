@@ -2,7 +2,7 @@
 // 外形は頂点の列（mm）で持ち、最後の頂点と最初の頂点を結んで閉じる。向き（時計回りか）は問わない。
 
 import { backgroundRect } from './background'
-import { footprint, type Scene } from './scene'
+import { equipmentBounds, footprint, type Scene } from './scene'
 import type { Point, Rect } from './viewport'
 
 export type Site = { points: Point[] }
@@ -158,11 +158,22 @@ export function equipmentOutsideSite(scene: Scene): string[] {
   return scene.equipment.filter((eq) => !rectInSite(site, footprint(eq))).map((eq) => eq.id)
 }
 
-// 「全体」で見せる範囲: 背景と敷地を囲む長方形。どちらも無ければ null
+// 「全体」で見せる範囲: 背景・敷地・設備・通路をまとめて囲む長方形。どれも無ければ null
 export function sceneExtent(scene: Scene): Rect | null {
-  const rects = [scene.background ? backgroundRect(scene.background) : null, scene.site ? siteBounds(scene.site) : null].filter(
-    (r): r is Rect => r !== null,
-  )
+  const rects: Rect[] = []
+  if (scene.background) rects.push(backgroundRect(scene.background))
+  if (scene.site) rects.push(siteBounds(scene.site))
+  const eq = equipmentBounds(scene.equipment)
+  if (eq) rects.push(eq)
+  for (const a of scene.aisles) {
+    if (a.points.length === 0) continue
+    const half = a.width / 2
+    const xs = a.points.map((p) => p.x)
+    const ys = a.points.map((p) => p.y)
+    const x = Math.min(...xs) - half
+    const y = Math.min(...ys) - half
+    rects.push({ x, y, width: Math.max(...xs) + half - x, height: Math.max(...ys) + half - y })
+  }
   if (rects.length === 0) return null
   const x = Math.min(...rects.map((r) => r.x))
   const y = Math.min(...rects.map((r) => r.y))

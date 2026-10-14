@@ -86,6 +86,14 @@ export function gridStep(scale: number, minPx = 10): GridStep {
   }
 }
 
+// マス目の大きさを決めたとき（cell mm）の線の間隔。太線は 10 マスごと。
+// 縮小してマス目が minPx より細かくなったら、10 倍ずつ間引いて引く（thinned が true）
+export function fixedGridStep(cell: number, scale: number, minPx = 4): GridStep & { thinned: boolean } {
+  let minor = cell
+  while (minor * scale < minPx) minor *= 10
+  return { minor, major: minor * 10, thinned: minor !== cell }
+}
+
 export type GridLines = { xs: number[]; ys: number[]; majorXs: number[]; majorYs: number[] } // mm
 
 // 見えている範囲に引く線の図面座標。細線と太線を分けて返す（太線の位置に細線は返さない）

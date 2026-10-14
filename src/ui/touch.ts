@@ -56,6 +56,8 @@ export function mountTouch(canvas: Canvas, editor: Editor): void {
   const backBtn = mk('1 つ戻す', '最後に置いた点を取り消す（Backspace と同じ）', () => press('Backspace'))
   const doneBtn = mk('終える', '描いている外形・通路を終える（Enter と同じ）', () => press('Enter'))
   const quitBtn = mk('やめる', '今の操作をやめる（Esc と同じ）', () => press('Escape'))
+  // 道具バーは横に滑らせないと「全体」が見えないので、いつも出しておく
+  mk('全体', '背景・敷地・置いた設備・通路の全体を画面の中央に収める（0 キーと同じ）', () => canvas.fitHome())
   root.append(bar)
 
   const update = () => {
