@@ -54,7 +54,7 @@ https://shostako.github.io/layout-studio/
 
 ## 手元で動かす（開発する人向け）
 
-Node.js 22 が要る。
+Node.js 22.12 以上が要る（使っている Vite と Vitest が 22.12 より前では動かない）。`node -v` で確かめる。
 
 ```
 npm ci              # 使うライブラリを入れる（最初の 1 回と、package-lock.json が変わったとき）
