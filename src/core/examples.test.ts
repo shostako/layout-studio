@@ -3,7 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { arrangeUnit } from './attach'
 import { planMetrics } from './compare'
-import { layoutGroups } from './plans'
+import { layoutSignature } from './layout'
+import { layoutChange, layoutGroups } from './plans'
 import { unitsOf } from './unit'
 import { prepareFlow } from './playback'
 import { SCENE_VERSION } from './scene'
@@ -28,7 +29,10 @@ describe('例の配置', () => {
       expect(r.plans.map((p) => p.name)).toEqual(want[name]!.plans)
       // 案はどれも同じ 1 つのレイアウト
       expect(layoutGroups(r).map((g) => g.description)).toEqual([want[name]!.layout])
+      // 開いたときに「並びが変わった」と聞かれない（確かめた並びが今の比べ方と合う）
+      expect(layoutChange(r)).toBeNull()
       for (const p of r.plans) {
+        expect(p.layout!.signature).toBe(layoutSignature(p.scene))
         // 付帯設備は整えるの決まりどおり（整えても動かない）
         for (const id of unitsOf(p.scene).keys()) expect(arrangeUnit(p.scene, id)).toMatchObject({ ok: true, command: null })
         expect(p.scene.version).toBe(SCENE_VERSION)

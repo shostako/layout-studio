@@ -1,9 +1,10 @@
 // レイアウト: 基準の設備（射出成形の組では成形機）の並び。案はどれか 1 つのレイアウトに属する（DECISIONS.md 2026-10-14）。DOM に触らない。
-// 並びは、基準の設備の種類ごとに、向き（横・縦）ごとの列と、列ごとの台数で表す（signature）。
-// 列は、設備を短い辺の向きに積んだ並び（例の「7 台 1 列」は横の成形機を上下に 7 台）。横の設備は中心の x、縦の設備は中心の y を
-// 小さい順に並べ、隣どうしの差が COLUMN_GAP を超えたところで次の列にする（寸法を変えただけで列の分かれ方が変わらないよう、決まった値）。
-// 横と縦が両方あれば、横の群と縦の群の位置の関係（左右・上下）も並びに入れる。
-// 台数・向き・列の分かれ方（と縦横の関係）が同じなら同じ並び（間隔を詰めた・列ごと寄せたは同じ）。
+// 並びの比べ方（DECISIONS.md「大きく動かす」の境目）:
+// 1. 列の分かれ方: 列は設備を短い辺の向きに積んだ並び（例の「7 台 1 列」は横の成形機を上下に 7 台）。種類と向き（横・縦）ごとに、
+//    横の設備は中心の x、縦の設備は中心の y を小さい順に並べ、隣どうしの差が COLUMN_GAP を超えたところで次の列にする。
+// 2. 列ごとの中身: 列の中を積む向きの小さい順に並べた、1 台ずつの回転。
+// 3. 列どうしの位置の関係: どの 2 列についても、x と y それぞれで中心の範囲が前・後・重なる（COLUMN_GAP 以内の差は重なる）のどれか。
+// 3 つが同じなら同じ並び（列の中の間隔を詰めた・列を丸ごと寄せたは同じ）。
 
 import { footprint, type Equipment, type Scene } from './scene'
 import { findTemplate } from './templates'
@@ -11,57 +12,71 @@ import { isAnchor } from './unit'
 
 type Rows = number[] // 列ごとの台数（列の並びの順）
 
-// 同じ列とみなす中心の差（mm）。縦横の群の位置の関係で「同じ」とみなす差にも使う
+// 同じ列とみなす中心の差（mm）。列どうしの範囲が「重なる」とみなす差にも使う。寸法に依らない決まった値
 export const COLUMN_GAP = 1000
 
-function rows(items: Equipment[], horizontal: boolean): Rows {
+type Column = { kind: string; horizontal: boolean; items: Equipment[] } // items は積む向きの小さい順
+
+const isHorizontal = (e: Equipment) => {
+  const f = footprint(e)
+  return f.width >= f.height
+}
+
+function columnsOf(items: Equipment[], kind: string, horizontal: boolean): Column[] {
   const key = (e: Equipment) => (horizontal ? e.x : e.y)
+  const along = (e: Equipment) => (horizontal ? e.y : e.x)
   const sorted = [...items].sort((a, b) => key(a) - key(b))
-  const out: Rows = []
+  const out: Column[] = []
   let prev: Equipment | null = null
   for (const e of sorted) {
-    if (prev && key(e) - key(prev) <= COLUMN_GAP) out[out.length - 1]! += 1
-    else out.push(1)
+    if (prev && key(e) - key(prev) <= COLUMN_GAP) out[out.length - 1]!.items.push(e)
+    else out.push({ kind, horizontal, items: [e] })
     prev = e
   }
+  for (const c of out) c.items.sort((a, b) => along(a) - along(b))
   return out
 }
 
-// 横の群と縦の群の位置の関係（中心の平均の左右・上下）。L＝横が左、R＝横が右、U＝横が上、D＝横が下、=＝差が COLUMN_GAP 以内
-type Relation = string
-
-type Arrangement = { kind: string; name: string; h: Rows; v: Rows; rel: Relation }[]
-
-function relation(hs: Equipment[], vs: Equipment[]): Relation {
-  if (!hs.length || !vs.length) return ''
-  const mean = (list: Equipment[], k: 'x' | 'y') => list.reduce((a, e) => a + e[k], 0) / list.length
-  const cmp = (k: 'x' | 'y', lo: string, hi: string) => {
-    const d = mean(hs, k) - mean(vs, k)
-    return Math.abs(d) <= COLUMN_GAP ? '=' : d < 0 ? lo : hi
-  }
-  return cmp('x', 'L', 'R') + cmp('y', 'U', 'D')
-}
-
-function arrangement(scene: Scene): Arrangement {
+function allColumns(scene: Scene): Column[] {
   const anchors = scene.equipment.filter((e) => isAnchor(scene, e))
   const kinds = [...new Set(anchors.map((e) => e.kind))].sort()
-  return kinds.map((kind) => {
+  return kinds.flatMap((kind) => {
     const list = anchors.filter((e) => e.kind === kind)
-    const horizontal = (e: Equipment) => {
-      const f = footprint(e)
-      return f.width >= f.height
-    }
-    const hs = list.filter(horizontal)
-    const vs = list.filter((e) => !horizontal(e))
-    return { kind, name: findTemplate(scene.templates, kind)?.name ?? kind, h: rows(hs, true), v: rows(vs, false), rel: relation(hs, vs) }
+    return [...columnsOf(list.filter(isHorizontal), kind, true), ...columnsOf(list.filter((e) => !isHorizontal(e)), kind, false)]
   })
+}
+
+// 2 列の、ある軸での中心の範囲の関係。B＝a が前、A＝a が後、O＝重なる
+function rangeRelation(a: Column, b: Column, k: 'x' | 'y'): string {
+  const lo = (c: Column) => Math.min(...c.items.map((e) => e[k]))
+  const hi = (c: Column) => Math.max(...c.items.map((e) => e[k]))
+  if (hi(a) + COLUMN_GAP < lo(b)) return 'B'
+  if (lo(a) > hi(b) + COLUMN_GAP) return 'A'
+  return 'O'
 }
 
 // 並びを表す文字列。同じ文字列なら同じレイアウト。基準の設備が無ければ空文字列
 export function layoutSignature(scene: Scene): string {
-  return arrangement(scene)
-    .map((a) => `${a.kind}:H${a.h.join(',')};V${a.v.join(',')}${a.rel ? `;${a.rel}` : ''}`)
-    .join('|')
+  const cols = allColumns(scene)
+  if (cols.length === 0) return ''
+  const parts = cols.map((c) => `${c.kind}/${c.horizontal ? 'H' : 'V'}:${c.items.map((e) => e.rotation).join(',')}`)
+  const rel: string[] = []
+  for (let i = 0; i < cols.length; i++)
+    for (let j = i + 1; j < cols.length; j++) rel.push(rangeRelation(cols[i]!, cols[j]!, 'x') + rangeRelation(cols[i]!, cols[j]!, 'y'))
+  return parts.join(' ') + (rel.length ? ` | ${rel.join(',')}` : '')
+}
+
+type Arrangement = { kind: string; name: string; h: Rows; v: Rows }[]
+
+function arrangement(scene: Scene): Arrangement {
+  const cols = allColumns(scene)
+  const kinds = [...new Set(cols.map((c) => c.kind))]
+  return kinds.map((kind) => ({
+    kind,
+    name: findTemplate(scene.templates, kind)?.name ?? kind,
+    h: cols.filter((c) => c.kind === kind && c.horizontal).map((c) => c.items.length),
+    v: cols.filter((c) => c.kind === kind && !c.horizontal).map((c) => c.items.length),
+  }))
 }
 
 const sum = (r: Rows) => r.reduce((a, b) => a + b, 0)

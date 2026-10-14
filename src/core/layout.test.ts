@@ -23,10 +23,10 @@ const row = (n: number, x: number, prefix = 'r') => Array.from({ length: n }, (_
 
 describe('layoutSignature と describeLayout', () => {
   it('横 1 列・横 2 列・縦横の混在・基準なし', () => {
-    expect(layoutSignature(scene(row(7, 0)))).toBe('molding-machine:H7;V')
+    expect(layoutSignature(scene(row(7, 0)))).toBe('molding-machine/H:0,0,0,0,0,0,0')
     expect(describeLayout(scene(row(7, 0)))).toBe('成形機 7 台（横 1 列）')
     const two = scene([...row(7, 0, 'a'), ...row(7, 17500, 'b')])
-    expect(layoutSignature(two)).toBe('molding-machine:H7,7;V')
+    expect(layoutSignature(two)).toBe('molding-machine/H:0,0,0,0,0,0,0 molding-machine/H:0,0,0,0,0,0,0 | BO')
     expect(describeLayout(two)).toBe('成形機 14 台（横 2 列: 7・7）')
     const mixed = scene([...row(6, 0), ...Array.from({ length: 4 }, (_, i) => m(`v${i}`, 20000 + i * 3800, 40000, 90))])
     expect(describeLayout(mixed)).toBe('成形機 10 台（横 6・縦 4）')
@@ -41,13 +41,22 @@ describe('layoutSignature と describeLayout', () => {
     const nudged = row(3, 0).map((e, i) => ({ ...e, y: e.y - i * 500, x: e.x + (i === 1 ? 900 : 0) }))
     expect(layoutSignature(scene(nudged))).toBe(base)
     const split = row(3, 0).map((e, i) => ({ ...e, x: i === 2 ? 1500 : 0 }))
-    expect(layoutSignature(scene(split))).toBe('molding-machine:H2,1;V')
+    expect(layoutSignature(scene(split))).toBe('molding-machine/H:0,0 molding-machine/H:0 | BB')
   })
 
-  it('縦横が混ざるときは、横の群と縦の群の位置の関係も並びに入る', () => {
+  it('180 度回す・1 台を別の列の向こうへ動かすと別の並び', () => {
+    const base = row(3, 0)
+    expect(layoutSignature(scene(base.map((e, i) => (i === 1 ? { ...e, rotation: 180 } : e))))).not.toBe(layoutSignature(scene(base)))
+    // 縦の 2 台（y を揃えて左右に並べた 1 列、x 0〜10000）の左にあった横の 1 台を、x 2000 へ動かす
+    const vs = [m('v0', 0, 20000, 90), m('v1', 10000, 20000, 90)]
+    const left = layoutSignature(scene([m('h', -2000, 0), ...vs]))
+    expect(layoutSignature(scene([m('h', 2000, 0), ...vs]))).not.toBe(left)
+  })
+
+  it('縦横が混ざるときは、横の列と縦の列の位置の関係も並びに入る', () => {
     const v = (x: number) => [m('v0', x, 20000, 90), m('v1', x + 3800, 20000, 90)]
     const right = scene([...row(3, 0), ...v(20000)])
-    expect(layoutSignature(right)).toBe('molding-machine:H3;V2;LU')
+    expect(layoutSignature(right)).toBe('molding-machine/H:0,0,0 molding-machine/V:90,90 | BB')
     // 縦の群を横の群の左へ回すと別の並び
     expect(layoutSignature(scene([...row(3, 30000), ...v(0)]))).not.toBe(layoutSignature(right))
     // 少し寄せただけなら同じ
@@ -56,13 +65,13 @@ describe('layoutSignature と describeLayout', () => {
 
   it('寸法を変えても列の分かれ方は変わらない', () => {
     const two = row(2, 0).map((e, i) => ({ ...e, x: i * 900 }))
-    expect(layoutSignature(scene(two))).toBe('molding-machine:H2;V')
-    expect(layoutSignature(scene(two.map((e) => ({ ...e, depth: 2000 }))))).toBe('molding-machine:H2;V')
+    expect(layoutSignature(scene(two))).toBe('molding-machine/H:0,0')
+    expect(layoutSignature(scene(two.map((e) => ({ ...e, depth: 2000 }))))).toBe('molding-machine/H:0,0')
   })
 
   it('列の分け方はたどる順に依らない（0・1000・2000 は 1 列）', () => {
     const chain = [m('a', 2000, 0), m('b', 0, 3800), m('c', 1000, 7600)]
-    expect(layoutSignature(scene(chain))).toBe('molding-machine:H3;V')
+    expect(layoutSignature(scene(chain))).toBe('molding-machine/H:0,0,0')
   })
 
   it('番号は L01 から、使っている最大の次', () => {
@@ -82,7 +91,7 @@ const withScene = (set: PlanSet, id: string, s: Scene): PlanSet => ({ ...set, pl
 describe('案のレイアウト', () => {
   it('案はレイアウトを持ち、複製は同じレイアウト、同じ並びの案は同じ番号、違う並びは次の番号', () => {
     let set = createPlanSet(scene(row(7, 0)))
-    expect(set.plans[0]!.layout).toEqual({ id: 'L01', signature: 'molding-machine:H7;V' })
+    expect(set.plans[0]!.layout).toEqual({ id: 'L01', signature: 'molding-machine/H:0,0,0,0,0,0,0' })
     set = run(set, { type: 'duplicatePlan', source: 'plan-1', id: 'plan-2' })
     expect(set.plans[1]!.layout!.id).toBe('L01')
     set = run(set, { type: 'addPlan', id: 'plan-3', scene: scene(row(7, 0)) })
@@ -104,10 +113,10 @@ describe('案のレイアウト', () => {
     set = withScene(set, 'plan-3', scene(row(8, 0)))
     expect(layoutChange(set)).toEqual({ from: 'L01', to: 'L03', existing: false, description: '成形機 8 台（横 1 列）' })
     const moved = run(set, { type: 'setPlanLayout', id: 'plan-3' })
-    expect(lay(moved, 'plan-3')).toEqual({ id: 'L03', signature: 'molding-machine:H8;V' })
+    expect(lay(moved, 'plan-3')).toEqual({ id: 'L03', signature: 'molding-machine/H:0,0,0,0,0,0,0,0' })
     expect(layoutChange(moved)).toBeNull()
     const kept = run(set, { type: 'confirmLayout', id: 'plan-3' })
-    expect(lay(kept, 'plan-3')).toEqual({ id: 'L01', signature: 'molding-machine:H8;V' })
+    expect(lay(kept, 'plan-3')).toEqual({ id: 'L01', signature: 'molding-machine/H:0,0,0,0,0,0,0,0' })
     // 2 列にすると、L02 と同じ並びなので L02 へ移せる
     const two = withScene(set, 'plan-3', scene([...row(7, 0, 'a'), ...row(7, 17500, 'b')]))
     expect(layoutChange(two)).toMatchObject({ to: 'L02', existing: true })

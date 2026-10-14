@@ -29,7 +29,7 @@ describe('placeBlock（並べる）', () => {
 
   it('14 台を 2 列、縦向き、取り出し側を選んで並べる', () => {
     const two = placed(createEmptyScene(), { count: 14, columns: 2, origin: { x: 0, y: 0 } })
-    expect(layoutSignature(two)).toBe('molding-machine:H7,7;V')
+    expect(layoutSignature(two)).toBe('molding-machine/H:0,0,0,0,0,0,0 molding-machine/H:0,0,0,0,0,0,0 | BO')
     expect(findOverlaps(two)).toEqual([])
     const v = placed(createEmptyScene(), { count: 4, orientation: 'vertical', side: 'left', origin: { x: 0, y: 0 } })
     expect(describeLayout(v)).toBe('成形機 4 台（縦 1 列）')
