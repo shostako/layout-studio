@@ -2,7 +2,8 @@
 // 並びは、基準の設備の種類ごとに、向き（横・縦）ごとの列と、列ごとの台数で表す（signature）。
 // 列は、設備を短い辺の向きに積んだ並び（例の「7 台 1 列」は横の成形機を上下に 7 台）。横の設備は中心の x、縦の設備は中心の y を
 // 小さい順に並べ、隣どうしの差が短い辺の半分（両方の小さい方）を超えたところで次の列にする。
-// 台数・向き・列の分かれ方が同じなら同じ並び（間隔を詰めた・列ごと寄せたは同じ）。
+// 横と縦が両方あれば、横の群と縦の群の位置の関係（左右・上下）も並びに入れる。
+// 台数・向き・列の分かれ方（と縦横の関係）が同じなら同じ並び（間隔を詰めた・列ごと寄せたは同じ）。
 
 import { footprint, type Equipment, type Scene } from './scene'
 import { findTemplate } from './templates'
@@ -27,7 +28,21 @@ function rows(items: Equipment[], horizontal: boolean): Rows {
   return out
 }
 
-type Arrangement = { kind: string; name: string; h: Rows; v: Rows }[]
+// 横の群と縦の群の位置の関係（中心の平均の左右・上下）。L＝横が左、R＝横が右、U＝横が上、D＝横が下、=＝差が短い辺の半分以内
+type Relation = string
+
+type Arrangement = { kind: string; name: string; h: Rows; v: Rows; rel: Relation }[]
+
+function relation(hs: Equipment[], vs: Equipment[]): Relation {
+  if (!hs.length || !vs.length) return ''
+  const mean = (list: Equipment[], k: 'x' | 'y') => list.reduce((a, e) => a + e[k], 0) / list.length
+  const tol = Math.min(...[...hs, ...vs].map((e) => Math.min(footprint(e).width, footprint(e).height))) / 2
+  const cmp = (k: 'x' | 'y', lo: string, hi: string) => {
+    const d = mean(hs, k) - mean(vs, k)
+    return Math.abs(d) <= tol ? '=' : d < 0 ? lo : hi
+  }
+  return cmp('x', 'L', 'R') + cmp('y', 'U', 'D')
+}
 
 function arrangement(scene: Scene): Arrangement {
   const anchors = scene.equipment.filter((e) => isAnchor(scene, e))
@@ -38,19 +53,16 @@ function arrangement(scene: Scene): Arrangement {
       const f = footprint(e)
       return f.width >= f.height
     }
-    return {
-      kind,
-      name: findTemplate(scene.templates, kind)?.name ?? kind,
-      h: rows(list.filter(horizontal), true),
-      v: rows(list.filter((e) => !horizontal(e)), false),
-    }
+    const hs = list.filter(horizontal)
+    const vs = list.filter((e) => !horizontal(e))
+    return { kind, name: findTemplate(scene.templates, kind)?.name ?? kind, h: rows(hs, true), v: rows(vs, false), rel: relation(hs, vs) }
   })
 }
 
 // 並びを表す文字列。同じ文字列なら同じレイアウト。基準の設備が無ければ空文字列
 export function layoutSignature(scene: Scene): string {
   return arrangement(scene)
-    .map((a) => `${a.kind}:H${a.h.join(',')};V${a.v.join(',')}`)
+    .map((a) => `${a.kind}:H${a.h.join(',')};V${a.v.join(',')}${a.rel ? `;${a.rel}` : ''}`)
     .join('|')
 }
 

@@ -44,6 +44,16 @@ describe('layoutSignature と describeLayout', () => {
     expect(layoutSignature(scene(split))).toBe('molding-machine:H2,1;V')
   })
 
+  it('縦横が混ざるときは、横の群と縦の群の位置の関係も並びに入る', () => {
+    const v = (x: number) => [m('v0', x, 20000, 90), m('v1', x + 3800, 20000, 90)]
+    const right = scene([...row(3, 0), ...v(20000)])
+    expect(layoutSignature(right)).toBe('molding-machine:H3;V2;LU')
+    // 縦の群を横の群の左へ回すと別の並び
+    expect(layoutSignature(scene([...row(3, 30000), ...v(0)]))).not.toBe(layoutSignature(right))
+    // 少し寄せただけなら同じ
+    expect(layoutSignature(scene([...row(3, 0), ...v(18000)]))).toBe(layoutSignature(right))
+  })
+
   it('列の分け方はたどる順に依らない（0・1000・2000 は 1 列）', () => {
     const chain = [m('a', 2000, 0), m('b', 0, 3800), m('c', 1000, 7600)]
     expect(layoutSignature(scene(chain))).toBe('molding-machine:H3;V')
