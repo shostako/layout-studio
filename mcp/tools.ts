@@ -48,8 +48,10 @@ const COMMANDS = {
 export const TOOLS: ToolDef[] = [
   {
     name: 'get_instructions',
-    description: '図面の決まり（mm、座標の向き）、指示（コマンド）の書き方、設備の種類と寸法、配置のこつを返す。指示を書く前に 1 回読む',
-    inputSchema: { type: 'object', properties: {} },
+    description:
+      '図面の決まり（mm、座標の向き）、指示（コマンド）の書き方、設備の種類（案ごとの一覧）と寸法、配置のこつを返す。指示を書く前に 1 回読む。' +
+      'file か、つながっている画面があればその案の種類の一覧で、どちらも無ければ射出成形の組で書く',
+    inputSchema: { type: 'object', properties: { file: FILE, plan: PLAN } },
   },
   {
     name: 'summarize',
@@ -145,7 +147,7 @@ export async function callTool(name: string, args: Args | undefined, ctx: Contex
   const a = args ?? {}
   switch (name) {
     case 'get_instructions':
-      return ok(aiInstructions())
+      return instructions(a, ctx)
     case 'summarize':
       return summarize(a, ctx)
     case 'check_commands':
@@ -181,6 +183,20 @@ async function read(src: Source, io: FileIo): Promise<{ ok: true; file: Loaded }
 }
 
 const where = (src: Source) => (src.kind === 'file' ? { file: src.path } : { screen: true })
+
+// 設備の種類は案ごとに違うので、読める案があればその一覧で書く
+async function instructions(a: Args, ctx: Context): Promise<ToolResult> {
+  const src = source(a, ctx)
+  if (typeof src === 'string') {
+    if (a.file !== undefined) return err(src)
+    return ok(aiInstructions())
+  }
+  const l = await read(src, ctx.io)
+  if (!l.ok) return err(l.error)
+  const p = findPlan(l.file.set, a.plan)
+  if (typeof p === 'string') return err(p)
+  return ok(aiInstructions(p.scene.templates))
+}
 
 async function summarize(a: Args, ctx: Context): Promise<ToolResult> {
   const src = source(a, ctx)

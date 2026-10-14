@@ -4,7 +4,6 @@
 
 import { distanceToSegment } from './aisle'
 import { footprint, type Equipment, type Scene } from './scene'
-import { TEMPLATES } from './templates'
 import type { Point } from './viewport'
 
 export type Link = { from: string; to: string }
@@ -41,21 +40,21 @@ export function checkLink(scene: Scene, link: Link): string | null {
   return null
 }
 
-// 工程の順（ひな形の並び）での位置。ひな形に無い種類は -1
-export function processIndex(kind: string): number {
-  return TEMPLATES.findIndex((t) => t.kind === kind)
+// 工程の順（シーンのひな形の並び）での位置。ひな形に無い種類は -1
+export function processIndex(scene: Scene, kind: string): number {
+  return scene.templates.findIndex((t) => t.kind === kind)
 }
 
 export type ChainResult = { ok: true; links: Link[] } | { ok: false; error: string }
 
-// 選んだ設備を工程の順（成形機 → 取出機 → … → 台車ストッカー）に並べ、隣どうしをつなぐ。
+// 選んだ設備を工程の順（ひな形の並び。射出成形の組なら成形機 → 取出機 → … → 台車ストッカー）に並べ、隣どうしをつなぐ。
 // 同じ種類が 2 台以上あると順が決まらないので断る。もうつないである組は返さない
 export function chainByProcess(scene: Scene, ids: readonly string[]): ChainResult {
   const items = ids.map((id) => scene.equipment.find((e) => e.id === id)).filter((e): e is Equipment => !!e)
   if (items.length < 2) return { ok: false, error: '工程の順につなぐには、設備を 2 台以上選んでください' }
-  const unknown = items.filter((e) => processIndex(e.kind) < 0)
+  const unknown = items.filter((e) => processIndex(scene, e.kind) < 0)
   if (unknown.length) return { ok: false, error: `工程の順が決まっていない設備があります: ${unknown.map((e) => e.name).join('、')}` }
-  const sorted = [...items].sort((a, b) => processIndex(a.kind) - processIndex(b.kind))
+  const sorted = [...items].sort((a, b) => processIndex(scene, a.kind) - processIndex(scene, b.kind))
   for (let i = 1; i < sorted.length; i++)
     if (sorted[i]!.kind === sorted[i - 1]!.kind)
       return { ok: false, error: `同じ種類が 2 台あり、順が決まりません: ${sorted[i - 1]!.name}、${sorted[i]!.name}。1 列ずつ選ぶか、「つなぐ」で 1 本ずつつないでください` }

@@ -4,10 +4,12 @@ import type { Aisle } from './aisle'
 import type { Background } from './background'
 import type { Link } from './flow'
 import type { Site } from './site'
+import { INJECTION_PRESET, copyTemplates, type EquipmentTemplate } from './templates'
 
 // 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）、
-// 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）、版 7 で通路の一方通行（oneWay）を足した
-export const SCENE_VERSION = 8
+// 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）、版 7 で通路の一方通行（oneWay）、
+// 版 8 で AGV の台数（flow.agvCount）、版 9 で設備の種類の一覧（templates）を足した
+export const SCENE_VERSION = 9
 
 export type Rotation = 0 | 90 | 180 | 270
 
@@ -46,7 +48,7 @@ export const NO_CLEARANCE: Clearance = { top: 0, right: 0, bottom: 0, left: 0 }
 
 export type Equipment = {
   id: string
-  kind: string // 'molding-machine' など。ひな形の種類
+  kind: string // 'molding-machine' など。ひな形（scene.templates）の種類
   name: string
   // 設備の中心の座標。回転は中心のまわりで行うので、回しても x, y は変わらない
   x: number
@@ -66,10 +68,21 @@ export type Scene = {
   aisles: Aisle[] // AGV の通路
   links: Link[] // 工程のつなぎ（設備から設備へ、ものが流れる向き）
   flow: FlowSettings // 流れの再生の数値
+  templates: EquipmentTemplate[] // 設備の種類（ひな形）の一覧。並びは工程の順
 }
 
-export function createEmptyScene(): Scene {
-  return { version: SCENE_VERSION, background: null, site: null, equipment: [], aisles: [], links: [], flow: { ...DEFAULT_FLOW_SETTINGS } }
+// 空のシーン。ひな形を渡さなければ射出成形の組
+export function createEmptyScene(templates: readonly EquipmentTemplate[] = INJECTION_PRESET): Scene {
+  return {
+    version: SCENE_VERSION,
+    background: null,
+    site: null,
+    equipment: [],
+    aisles: [],
+    links: [],
+    flow: { ...DEFAULT_FLOW_SETTINGS },
+    templates: copyTemplates(templates),
+  }
 }
 
 // 回転を考えた、図面の上で占める外接の長方形（左上と大きさ）

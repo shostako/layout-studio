@@ -3,11 +3,11 @@ import { AI_LENGTH_LIMIT, MAX_AI_COMMANDS, parseAiReply, planAiCommands } from '
 import { stubReply } from './aiStub'
 import { applyCommand } from './commands'
 import { createEmptyScene, footprint, type Scene } from './scene'
-import { findTemplate, equipmentFromTemplate } from './templates'
+import { INJECTION_PRESET, findTemplate, equipmentFromTemplate } from './templates'
 
 function withMachines(n: number): Scene {
   let s = createEmptyScene()
-  const t = findTemplate('molding-machine')!
+  const t = findTemplate(INJECTION_PRESET, 'molding-machine')!
   for (let i = 1; i <= n; i++) {
     const r = applyCommand(s, { type: 'add', equipment: equipmentFromTemplate(t, { id: `eq-${i}`, name: `成形機 ${i}`, center: { x: i * 10000, y: 5000 } }) })
     if (!r.ok) throw new Error(r.error)

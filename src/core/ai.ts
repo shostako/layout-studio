@@ -6,7 +6,7 @@ import { DEFAULT_AISLE_WIDTH, nextAisleId, nextAisleName, type Aisle } from './a
 import { applyCommand, type Command } from './commands'
 import { FLOW_LIMITS, nextEquipmentId, nextEquipmentIds, type FlowSettings, type Rotation, type Scene } from './scene'
 import { siteArea } from './site'
-import { TEMPLATES, equipmentFromTemplate, findTemplate, nextEquipmentName } from './templates'
+import { equipmentFromTemplate, findTemplate, nextEquipmentName, type EquipmentTemplate } from './templates'
 import type { Point } from './viewport'
 
 // 1 回の応答で受け付ける指示の数の上限
@@ -25,7 +25,7 @@ export type AiCommand =
   | Extract<Command, { type: (typeof PASS_TYPES)[number] }>
 
 // そのまま画面のコマンドとして通す指示と、その項目の形
-type Field = 'ids' | 'id' | 'length' | 'number' | 'object' | 'links' | 'points' | 'site'
+type Field = 'ids' | 'id' | 'length' | 'number' | 'object' | 'array' | 'links' | 'points' | 'site'
 const PASS = {
   move: { ids: 'ids', dx: 'length', dy: 'length' },
   rotate: { ids: 'ids', quarterTurns: 'number' },
@@ -39,6 +39,7 @@ const PASS = {
   unlink: { links: 'links' },
   setFlow: { changes: 'object' },
   setSite: { site: 'site' },
+  setTemplates: { templates: 'array' },
 } as const satisfies Record<string, Record<string, Field>>
 const PASS_TYPES = Object.keys(PASS) as (keyof typeof PASS)[]
 
@@ -181,6 +182,8 @@ function checkField(v: unknown, f: Field): string | null {
       return typeof v === 'number' && Number.isFinite(v) ? null : '数にしてください'
     case 'object':
       return typeof v === 'object' && v !== null && !Array.isArray(v) ? null : '{ … } の形にしてください'
+    case 'array':
+      return Array.isArray(v) ? null : '[ … ] の配列にしてください'
     case 'links':
       return Array.isArray(v) &&
         v.every((l) => typeof l === 'object' && l !== null && typeof l.from === 'string' && typeof l.to === 'string')
@@ -199,8 +202,8 @@ function checkField(v: unknown, f: Field): string | null {
 function place(scene: Scene, r: Record<string, unknown>): ToCommand {
   const no = (error: string): ToCommand => ({ ok: false, error })
   if (typeof r.kind !== 'string') return no('kind（設備の種類）がありません')
-  const t = findTemplate(r.kind)
-  if (!t) return no(`知らない設備の種類です: ${r.kind}（使えるのは ${TEMPLATES.map((x) => x.kind).join(', ')}）`)
+  const t = findTemplate(scene.templates, r.kind)
+  if (!t) return no(`知らない設備の種類です: ${r.kind}（使えるのは ${scene.templates.map((x) => x.kind).join(', ')}。種類を足すには setTemplates）`)
   const bad = checkFields(r, { x: 'length', y: 'length' })
   if (bad) return no(bad)
   if (r.id !== undefined && checkField(r.id, 'id')) return no('id は文字列にしてください')
@@ -248,6 +251,26 @@ const signed = (v: number) => (v > 0 ? '+' : '') + mm(v)
 function names(list: readonly { id: string; name: string }[], ids: readonly string[], unit: string): string {
   const ns = ids.map((id) => list.find((x) => x.id === id)?.name ?? id)
   return ns.length <= 3 ? ns.join('、') : `${ns.slice(0, 3).join('、')} ほか ${ns.length - 3} ${unit}`
+}
+
+// ひな形の一覧の差し替えを、足す・消す・変える種類の名前で書く
+function describeTemplates(before: readonly EquipmentTemplate[], after: readonly EquipmentTemplate[]): string {
+  const added = after.filter((t) => !before.some((b) => b.kind === t.kind)).map((t) => t.name)
+  const removed = before.filter((b) => !after.some((t) => t.kind === b.kind)).map((t) => t.name)
+  const changed = after
+    .filter((t) => {
+      const b = before.find((x) => x.kind === t.kind)
+      return b !== undefined && JSON.stringify(b) !== JSON.stringify(t)
+    })
+    .map((t) => t.name)
+  const order = (list: readonly EquipmentTemplate[]) => list.map((t) => t.kind).filter((k) => before.some((b) => b.kind === k) && after.some((a) => a.kind === k)).join()
+  const parts = [
+    added.length ? `足す: ${added.join('、')}` : '',
+    removed.length ? `消す: ${removed.join('、')}` : '',
+    changed.length ? `変える: ${changed.join('、')}` : '',
+    order(before) !== order(after) ? '並べ替える' : '',
+  ].filter(Boolean)
+  return `設備の種類の一覧を変える（${parts.join('。') || '変わりなし'}）`
 }
 
 // コマンドを人が読む文にする。scene は当てる前のシーン
@@ -315,6 +338,8 @@ export function describeCommand(scene: Scene, cmd: Command): string {
     case 'calibrateBackground':
     case 'moveBackground':
       return '背景の図面を変える'
+    case 'setTemplates':
+      return describeTemplates(scene.templates, cmd.templates)
     case 'loadScene':
       return 'シーンを差し替える'
     case 'batch':

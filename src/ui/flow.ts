@@ -62,7 +62,7 @@ export function mountFlow(canvas: Canvas, editor: Editor): void {
     return b
   }
   const linkBtn = mkButton('つなぐ', '元の設備、次の設備の順にクリックして矢印を引く。続けてクリックすると次へつながる。Esc でやめる', () => startLinking())
-  const chainBtn = mkButton('工程の順につなぐ', '選んだ設備を、成形機 → 取出機 → 型抜き機 → トリミング機 → 重量計 → 台車ストッカーの順につなぐ', () => chainSelection())
+  const chainBtn = mkButton('工程の順につなぐ', '選んだ設備を、工程の順（設備の種類の並び。射出成形の組なら成形機 → 取出機 → 型抜き機 → トリミング機 → 重量計 → 台車ストッカー）につなぐ', () => chainSelection())
   const unlinkBtn = mkButton('つなぎを外す', '選んだつなぎを外す（Delete。元に戻すで戻せる）', () => removeSelection())
   const hint = document.createElement('div')
   hint.className = 'hint'

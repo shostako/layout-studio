@@ -1,9 +1,10 @@
 // シーンの JSON ファイル: 書き出しと、読み込み（古い版の変換と中身の確かめ）。DOM に触らない。
-// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles・links・flow）。形を変えるときは SCENE_VERSION を上げ、
+// ファイルの中身はシーンそのもの（version・background・site・equipment・aisles・links・flow・templates）。形を変えるときは SCENE_VERSION を上げ、
 // MIGRATIONS に 1 つ前の版から変換する関数を足す。
 
 import { applyCommand } from './commands'
 import { DEFAULT_FLOW_SETTINGS, SCENE_VERSION, createEmptyScene, type Scene } from './scene'
+import { INJECTION_PRESET, copyTemplates } from './templates'
 import type { Plan, PlanSet } from './plans'
 
 export type ParseResult = { ok: true; scene: Scene } | { ok: false; error: string }
@@ -33,6 +34,8 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
   // flow が数値の束の形でなければ、そのままにして読み込みの確かめで断る
   7: (d) =>
     typeof d.flow === 'object' && d.flow !== null && !Array.isArray(d.flow) ? { ...d, flow: { ...d.flow, agvCount: 1 } } : d,
+  // 版 9 で設備の種類の一覧（templates）を足した。それまでは射出成形の 6 種がコードに固定だったので、その組で読む
+  8: (d) => ({ ...d, templates: copyTemplates(INJECTION_PRESET) }),
 }
 
 export function serializeScene(scene: Scene): string {

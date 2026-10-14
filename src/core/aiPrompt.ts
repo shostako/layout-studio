@@ -7,7 +7,7 @@ import { aisleLength, nextAisleId } from './aisle'
 import { findOverlaps } from './overlap'
 import { FLOW_LIMITS, footprint, nextEquipmentId, type FlowSettings, type Scene } from './scene'
 import { equipmentOutsideSite, siteArea, siteBounds } from './site'
-import { TEMPLATES } from './templates'
+import { INJECTION_PRESET, ROLE_LABELS, type EquipmentTemplate } from './templates'
 
 // 長さは 1 mm に丸める（AI に渡す文を短くするため）
 const r = (v: number) => Math.round(v)
@@ -31,6 +31,7 @@ export type SceneSummary = {
   aisles: { id: string; name: string; width: number; closed: boolean; points: { x: number; y: number }[]; lengthMm: number }[]
   links: { from: string; to: string }[]
   flow: FlowSettings
+  templates: EquipmentTemplate[]
   notices: string[]
   nextIds: { equipment: string; aisle: string }
 }
@@ -84,6 +85,7 @@ export function summarizeScene(scene: Scene): SceneSummary {
     })),
     links: scene.links.map((l) => ({ from: l.from, to: l.to })),
     flow: { ...scene.flow },
+    templates: scene.templates.map((t) => ({ ...t, clearance: { ...t.clearance } })),
     notices,
     nextIds: { equipment: nextEquipmentId(scene), aisle: nextAisleId(scene) },
   }
@@ -91,15 +93,42 @@ export function summarizeScene(scene: Scene): SceneSummary {
 
 const n = (v: number) => v.toLocaleString('en-US')
 
-// 指示の書き方（シーンに依らない部分）。ai.ts の planAiCommands が受け付ける形と合わせる
-export function aiInstructions(): string {
-  const templates = TEMPLATES.map(
-    (t) => `- ${t.kind}（${t.name}）: 幅 ${n(t.width)} × 奥行 ${n(t.depth)}、余白 ${n(t.clearance.top)}`,
-  ).join('\n')
+// 種類の一覧の 1 行（役割があれば添える）
+function templateLine(t: EquipmentTemplate, all: readonly EquipmentTemplate[]): string {
+  const c = t.clearance
+  const same = c.top === c.right && c.right === c.bottom && c.bottom === c.left
+  const role =
+    t.role === 'mounted'
+      ? `、役割: 載る（${all.find((x) => x.kind === t.mountsOn)?.name ?? t.mountsOn} の上）`
+      : t.role
+        ? `、役割: ${ROLE_LABELS[t.role]}`
+        : ''
+  return `- ${t.kind}（${t.name}）: 幅 ${n(t.width)} × 奥行 ${n(t.depth)}、余白 ${same ? n(c.top) : `上 ${n(c.top)}・右 ${n(c.right)}・下 ${n(c.bottom)}・左 ${n(c.left)}`}${role}`
+}
+
+// 射出成形の組の配置の決まり（docs/layout-rules.md と合わせる）。成形機が基準の一覧のときだけ添える
+const INJECTION_TIPS = `- 成形機は配置の基準。頼まれない限り成形機を動かさない・回さない。
+- 取出機は成形機の上に載せる（重ねて置き、成形機 → 取出機とつなぐ。つないだ組の重なりは注意にならない）。取出機の梁は成形機の横長の辺を横切り、取り出し側へ張り出す。
+- 取り出し側（成形機の 2 つの長辺のどちらに成形品を落とすか）は、頼みに書いてあればそれ。無ければ、その成形機につないだ取出機が張り出している側、取出機が無ければ付帯設備がある側。どれも無いとき（新しく付けるとき）だけ、成形機が横（長辺が x）なら下（y の大きい側）、縦（長辺が y）なら右（x の大きい側）。整えるときは今の側を変えない。
+- 取出機の位置: 梁は取り出し側と反対へ 800 mm、取り出し側へ（取出機の奥行 − 800）mm 張り出す（中心は成形機の中心から取り出し側へ 奥行の半分 − 800）。長辺に沿っては成形機の中心から長さの 0.15 倍だけずらして載せ、後工程はその反対の向きへ、取出機の端から余白をあけて並べる。
+- 後工程の列の中心線は、成形機の取り出し側の辺から「余白の大きい方 ＋ 列でいちばん奥行のある設備の奥行の半分」の所（ひな形では 1750 mm）。並べる向きも、頼み → 取出機と反対の側 → 付帯設備がある側 → 横は左・縦は上 の順で決める。
+- 取出機と後工程の向きは成形機に合わせる: 横の成形機（長辺が x）では rotation 0、縦（長辺が y）では rotation 90（横のユニットをまるごと 90 度回した形）。
+- 付けるとき（新しく付帯設備を置く・付け直す）は、型抜き機・トリミング機・台車ストッカー・予備のストッカーを、取り出し側の長辺に沿って取出機の落とし口の側からこの順に並べる。重量計は使わない。
+- 整えるときは、今の並びの順と向きを保ったまま（入れ替えてあればその順のまま）、間隔を余白ちょうどに、中心を列の中心線に揃えるだけにする。成形機と取出機は動かさない。
+- つなぎは 取出機 → 型抜き機 → トリミング機 と、トリミング機 → 台車ストッカー、トリミング機 → 予備のストッカー の 2 本の枝（ストッカーから予備へはつながない。ストッカーから先へは成形品が流れない）。
+- ストッカーと予備は列の端に置き、AGV の通路に面させる。通路は出入り口からストッカーの近くまでつなぐ。
+- 本体どうしの間は、両方の余白の大きい方にする（付帯設備どうし 500 mm、成形機のまわり 1000 mm）。
+- 付帯設備は上の決まりどおりの位置に置く。その位置が敷地からはみ出す・通路やほかの設備に重なるときも、別の側や詰めた間隔に変えずにそのまま置き、message で注意を伝える（付け直すときは、その成形機のユニットの設備を動かして使い、写しを増やさない。同じ種類が多ければつなぎの順で先のものから使い、ストッカーは先につないだ方を台車ストッカー、次を予備の位置に置く。余った分は動かさない。2 台以上の成形機からつながる共有の設備はユニットに入らないので動かさない）。
+`
+
+// 指示の書き方。templates は今のシーンの設備の種類の一覧（省けば射出成形の組）。ai.ts の planAiCommands が受け付ける形と合わせる
+export function aiInstructions(templates: readonly EquipmentTemplate[] = INJECTION_PRESET): string {
+  const kinds = templates.length ? templates.map((t) => templateLine(t, templates)).join('\n') : '- （まだありません。setTemplates で足してください）'
+  const injection = templates.some((t) => t.kind === 'molding-machine' && t.role === 'anchor')
   const flow = (Object.keys(FLOW_LIMITS) as (keyof FlowSettings)[])
     .map((k) => `${k}（${FLOW_LIMITS[k].label}、${n(FLOW_LIMITS[k].min)}〜${n(FLOW_LIMITS[k].max)}${FLOW_LIMITS[k].integer ? '、整数' : ''}）`)
     .join('、')
-  return `あなたは射出成形工場の設備レイアウトを検討する図面エディタ layout-studio の操作係です。
+  return `あなたは工場の設備レイアウトを検討する図面エディタ layout-studio の操作係です。
 頼みに合わせて、図面の設備・通路を動かす指示（コマンド）の列を JSON で返してください。
 
 ## 図面の決まり
@@ -140,26 +169,19 @@ export function aiInstructions(): string {
 - { "type": "setFlow", "changes": { "cycleTime": 25 } } 流れの再生の数値を変える。項目: ${flow}
 - { "type": "setSite", "site": { "points": [ { "x": 0, "y": 0 }, { "x": 30000, "y": 0 }, { "x": 30000, "y": 20000 }, { "x": 0, "y": 20000 } ] } }
   敷地の外形を描く（多角形の頂点）。null で消す
+- { "type": "setTemplates", "templates": [ ...今の一覧..., { "kind": "press-1", "name": "プレス機", "width": 3000, "depth": 2000, "color": "#8a6fb0", "clearance": { "top": 800, "right": 800, "bottom": 800, "left": 800 } } ] }
+  設備の種類（ひな形）の一覧をまるごと差し替える。今の一覧（要約の templates）を全部写し、足す・変える・消す・並べ替える（写し忘れた種類は消える）。並びは工程の順。
+  kind は英小文字・数字・- 。省ける項目: role（anchor＝基準、mounted＝載る（mountsOn に載り先の kind）、buffer＝溜める（満杯で AGV を呼ぶ））。
+  置いてある設備の種類は消せない。一覧を変えても置いた設備の寸法は変わらない（update で変える）。
 - 使えないもの: 背景の図面の操作、シーンの差し替え、add（place を使う）、batch。
 
 ## 設備の種類（kind）と、ひな形の寸法・余白（mm、架空の目安）
-${templates}
+並びは工程の順。役割: 基準＝レイアウトの骨組み、載る＝別の種類の上に重ねて置く、溜める＝満杯で AGV を呼ぶ（流れの再生のストッカー）。
+${kinds}
 
 ## 配置のこつ
-- 本体どうし、本体と通路の帯（中心線から幅の半分ずつ）を重ねない。他の設備の本体を余白に入れない（付帯設備の決まりどおりの位置は例外。下のとおり）。
-- 成形機は配置の基準。頼まれない限り成形機を動かさない・回さない。
-- 取出機は成形機の上に載せる（重ねて置き、成形機 → 取出機とつなぐ。つないだ組の重なりは注意にならない）。取出機の梁は成形機の横長の辺を横切り、取り出し側へ張り出す。
-- 取り出し側（成形機の 2 つの長辺のどちらに成形品を落とすか）は、頼みに書いてあればそれ。無ければ、その成形機につないだ取出機が張り出している側、取出機が無ければ付帯設備がある側。どれも無いとき（新しく付けるとき）だけ、成形機が横（長辺が x）なら下（y の大きい側）、縦（長辺が y）なら右（x の大きい側）。整えるときは今の側を変えない。
-- 取出機の位置: 梁は取り出し側と反対へ 800 mm、取り出し側へ（取出機の奥行 − 800）mm 張り出す（中心は成形機の中心から取り出し側へ 奥行の半分 − 800）。長辺に沿っては成形機の中心から長さの 0.15 倍だけずらして載せ、後工程はその反対の向きへ、取出機の端から余白をあけて並べる。
-- 後工程の列の中心線は、成形機の取り出し側の辺から「余白の大きい方 ＋ 列でいちばん奥行のある設備の奥行の半分」の所（ひな形では 1750 mm）。並べる向きも、頼み → 取出機と反対の側 → 付帯設備がある側 → 横は左・縦は上 の順で決める。
-- 取出機と後工程の向きは成形機に合わせる: 横の成形機（長辺が x）では rotation 0、縦（長辺が y）では rotation 90（横のユニットをまるごと 90 度回した形）。
-- 付けるとき（新しく付帯設備を置く・付け直す）は、型抜き機・トリミング機・台車ストッカー・予備のストッカーを、取り出し側の長辺に沿って取出機の落とし口の側からこの順に並べる。重量計は使わない。
-- 整えるときは、今の並びの順と向きを保ったまま（入れ替えてあればその順のまま）、間隔を余白ちょうどに、中心を列の中心線に揃えるだけにする。成形機と取出機は動かさない。
-- つなぎは 取出機 → 型抜き機 → トリミング機 と、トリミング機 → 台車ストッカー、トリミング機 → 予備のストッカー の 2 本の枝（ストッカーから予備へはつながない。ストッカーから先へは成形品が流れない）。
-- ストッカーと予備は列の端に置き、AGV の通路に面させる。通路は出入り口からストッカーの近くまでつなぐ。
-- 本体どうしの間は、両方の余白の大きい方にする（付帯設備どうし 500 mm、成形機のまわり 1000 mm）。
-- 付帯設備は上の決まりどおりの位置に置く。その位置が敷地からはみ出す・通路やほかの設備に重なるときも、別の側や詰めた間隔に変えずにそのまま置き、message で注意を伝える（付け直すときは、その成形機のユニットの設備を動かして使い、写しを増やさない。同じ種類が多ければつなぎの順で先のものから使い、ストッカーは先につないだ方を台車ストッカー、次を予備の位置に置く。余った分は動かさない。2 台以上の成形機からつながる共有の設備はユニットに入らないので動かさない）。
-- 敷地の外形があれば、本体をその内に収める（ただし付帯設備の決まりどおりの位置は例外で、はみ出してもそのまま置いて知らせる）。
+- 本体どうし、本体と通路の帯（中心線から幅の半分ずつ）を重ねない。他の設備の本体を余白に入れない（載る設備を、つないだ載り先に重ねるのはかまわない${injection ? '。付帯設備の決まりどおりの位置は例外で、下のとおり' : ''}）。
+${injection ? INJECTION_TIPS : ''}- 敷地の外形があれば、本体をその内に収める${injection ? '（ただし付帯設備の決まりどおりの位置は例外で、はみ出してもそのまま置いて知らせる）' : ''}。
 - 並べるときは bounds と余白から間隔を計算し、座標は整数の mm にする。`
 }
 
@@ -167,7 +189,7 @@ ${templates}
 export function buildAiPrompt(scene: Scene, request = ''): string {
   const summary = JSON.stringify(summarizeScene(scene), null, 1)
   const ask = request.trim()
-  return `${aiInstructions()}
+  return `${aiInstructions(scene.templates)}
 
 ## 今のシーン
 \`\`\`json

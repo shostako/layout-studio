@@ -45,6 +45,17 @@ describe('道具', () => {
     expect(r.text).toContain('"type": "place"')
   })
 
+  it('get_instructions は file の案の種類の一覧で書く', async () => {
+    const zero = { top: 0, right: 0, bottom: 0, left: 0 }
+    const s: Scene = createEmptyScene([{ kind: 'press', name: 'プレス機', width: 3000, depth: 2000, color: '#8a6fb0', clearance: zero, role: 'anchor' }])
+    const io = memoryIo({ 'p.json': JSON.stringify(s) })
+    const r = await callTool('get_instructions', { file: 'p.json' }, { io })
+    expect(r.isError).toBe(false)
+    expect(r.text).toContain('- press（プレス機）')
+    expect(r.text).not.toContain('molding-machine（成形機）')
+    expect((await callTool('get_instructions', { file: 'none.json' }, { io })).isError).toBe(true)
+  })
+
   it('summarize は案の一覧と、開いていた案の要約・面積を返す。plan で名前や id を選べる', async () => {
     const io = memoryIo({ 'a.json': twoPlans() })
     const r = out((await callTool('summarize', { file: 'a.json' }, { io: io })))

@@ -5,6 +5,7 @@ import type { Canvas } from './canvas'
 import type { Editor } from './editor'
 import { createHistory, type History } from '../core/history'
 import { activePlan, applyPlanCommand, createPlanSet, nextPlanIds, withActiveScene, type PlanCommand, type PlanSet } from '../core/plans'
+import { createEmptyScene } from '../core/scene'
 
 export type Plans = {
   // 今の案の束（開いている案は editor の今のシーン）
@@ -79,7 +80,10 @@ export function mountPlans(canvas: Canvas, editor: Editor): Plans {
     return true
   }
 
-  mk('足す', '空の案を足して開く', () => run({ type: 'addPlan', id: nextPlanIds(current())[0]! }))
+  // 空の案は、開いている案の設備の種類の一覧を引き継ぐ（種類を作り込んだ一覧を、案ごとに作り直さずに済むように）
+  mk('足す', '空の案を足して開く（設備の種類の一覧は、開いている案のものを写す）', () =>
+    run({ type: 'addPlan', id: nextPlanIds(current())[0]!, scene: createEmptyScene(editor.scene().templates) }),
+  )
   mk('複製', '開いている案の写しを足して開く', () => {
     const s = current()
     run({ type: 'duplicatePlan', source: s.active, id: nextPlanIds(s)[0]! })

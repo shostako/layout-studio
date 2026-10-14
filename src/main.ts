@@ -13,6 +13,7 @@ import { mountSite } from './ui/site'
 import { mountStorage } from './ui/storage'
 import { mountExportImage } from './ui/exportImage'
 import { applySavedTheme, mountMonochrome, mountTheme } from './ui/theme'
+import { mountTemplates } from './ui/templates'
 import { mountTouch } from './ui/touch'
 
 applySavedTheme()
@@ -20,6 +21,7 @@ const app = document.getElementById('app')
 if (app) {
   const canvas = mountCanvas(app)
   const editor = mountEditor(canvas)
+  mountTemplates(canvas, editor)
   mountBackground(canvas, editor)
   mountSite(canvas, editor)
   // つなぎは通路より上に描くので、矢印のクリックを通路より先に受ける

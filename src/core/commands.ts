@@ -6,6 +6,7 @@ import { calibrate, checkBackground, type Background } from './background'
 import { checkLink, sameLink, type Link } from './flow'
 import { checkSite, type Site } from './site'
 import { DEFAULT_FLOW_SETTINGS, FLOW_LIMITS, NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type FlowSettings, type Rotation, type Scene } from './scene'
+import { INJECTION_PRESET, checkTemplates, normalizeTemplates, type EquipmentTemplate } from './templates'
 import type { Point } from './viewport'
 
 export type Command =
@@ -27,6 +28,7 @@ export type Command =
   | { type: 'link'; links: Link[] } // 工程のつなぎを足す（from → to）。1 本でも断られたら、どれも足さない
   | { type: 'unlink'; links: Link[] } // 工程のつなぎを外す
   | { type: 'setFlow'; changes: Partial<FlowSettings> } // 流れの再生の数値（サイクル・ストッカーの容量・AGV の速さ・入れ替えの時間）を変える。書いたものだけ変える
+  | { type: 'setTemplates'; templates: EquipmentTemplate[] } // 設備の種類（ひな形）の一覧を差し替える（足す・変える・消す・並べ替える）。置いてある設備の種類は消せない。置いた設備は変えない
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
   | { type: 'batch'; commands: Command[] } // コマンドを順に当て、まとめて 1 つの操作にする（AI の 1 回の応答など）。1 つでも断られたら、どれも当てない
 
@@ -77,6 +79,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return unlink(scene, cmd.links)
     case 'setFlow':
       return setFlow(scene, cmd.changes)
+    case 'setTemplates':
+      return setTemplates(scene, cmd.templates)
     case 'loadScene':
       return loadScene(cmd.scene)
     case 'batch':
@@ -354,6 +358,16 @@ function checkFlow(f: unknown, all: boolean): string | null {
   return null
 }
 
+function setTemplates(scene: Scene, templates: EquipmentTemplate[]): CommandResult {
+  const bad = checkTemplates(templates)
+  if (bad) return fail(bad)
+  const kinds = new Set(templates.map((t) => t.kind))
+  // 一覧にあった種類で、置いてある設備が使っているものは消せない（一覧に無い種類の設備は、前から無いのでそのまま）
+  const gone = scene.templates.filter((t) => !kinds.has(t.kind) && scene.equipment.some((e) => e.kind === t.kind))
+  if (gone.length) return fail(`置いてある設備の種類は消せません: ${gone.map((t) => t.name).join('、')}（先に設備を消してください）`)
+  return { ok: true, scene: { ...scene, templates: normalizeTemplates(templates) } }
+}
+
 function setFlow(scene: Scene, changes: Partial<FlowSettings>): CommandResult {
   const bad = checkFlow(changes, false)
   if (bad) return fail(bad)
@@ -383,7 +397,11 @@ function loadScene(next: Scene): CommandResult {
   if (typeof next !== 'object' || next === null) return fail('シーンの形ではありません')
   if (next.version !== SCENE_VERSION) return fail(`シーンの版が違います（${String(next.version)}。読めるのは ${SCENE_VERSION}）`)
   if (!Array.isArray(next.equipment)) return fail('設備の一覧（equipment）がありません')
-  let r: CommandResult = { ok: true, scene: createEmptyScene() }
+  // 種類の一覧を書かなければ射出成形の組（AI が一覧を書かずにシーンを作れるように）
+  const templates = next.templates === undefined ? INJECTION_PRESET : next.templates
+  const badT = checkTemplates(templates)
+  if (badT) return fail(badT)
+  let r: CommandResult = { ok: true, scene: createEmptyScene(normalizeTemplates(templates)) }
   if (next.background !== null && next.background !== undefined) {
     if (typeof next.background !== 'object') return fail('背景（background）の形ではありません')
     r = setBackground(r.scene, next.background)

@@ -186,6 +186,9 @@ body {
   gap: 6px;
   align-items: center;
   text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .template button.active {
   outline: 2px solid var(--axes);
@@ -216,6 +219,25 @@ body {
   display: flex;
   gap: 4px;
   margin: 6px 0;
+}
+/* 設備の種類の編集 */
+.kind-panel {
+  margin: 4px 0 8px;
+}
+.kind-panel summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.kind-panel .actions {
+  flex-wrap: wrap;
+}
+.kind-panel .actions button {
+  white-space: nowrap;
+}
+.kind-panel select {
+  font: inherit;
+  min-width: 0;
 }
 .message {
   color: #c0392b;
