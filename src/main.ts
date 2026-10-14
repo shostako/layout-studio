@@ -1,6 +1,7 @@
 import './ui/style.css'
 import { mountAi } from './ui/ai'
 import { mountAttach } from './ui/attach'
+import { mountBlock } from './ui/block'
 import { mountAisles } from './ui/aisle'
 import { mountBackground } from './ui/background'
 import { mountCanvas } from './ui/canvas'
@@ -23,6 +24,7 @@ if (app) {
   const canvas = mountCanvas(app)
   const editor = mountEditor(canvas)
   mountTemplates(canvas, editor)
+  mountBlock(canvas, editor)
   mountAttach(canvas, editor)
   mountBackground(canvas, editor)
   mountSite(canvas, editor)

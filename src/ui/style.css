@@ -1105,3 +1105,7 @@ body {
 .toolbar button.active {
   outline: 2px solid var(--axes);
 }
+/* ユニットを並べる: 見出しが長いので欄を広く */
+.block-panel .props label {
+  grid-template-columns: 6.5em 1fr;
+}

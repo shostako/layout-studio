@@ -110,7 +110,7 @@ function templateLine(t: EquipmentTemplate, all: readonly EquipmentTemplate[]): 
 }
 
 // 射出成形の組の配置の決まり（docs/layout-rules.md と合わせる）。成形機が基準の一覧のときだけ添える
-const INJECTION_TIPS = `- 「付帯設備を（適切に）配置して」は attachUnit、「（適切な配置に）整えて」は arrangeUnits を使う。座標を手で計算するのは、これで足りないときだけ。
+const INJECTION_TIPS = `- 「成形機を n 台（m 列で）並べて」は placeUnits、「付帯設備を（適切に）配置して」は attachUnit、「（適切な配置に）整えて」は arrangeUnits を使う。座標を手で計算するのは、これで足りないときだけ。
 - 成形機は配置の基準。頼まれない限り成形機を動かさない・回さない。
 - 取出機は成形機の上に載せる（重ねて置き、成形機 → 取出機とつなぐ。つないだ組の重なりは注意にならない）。取出機の梁は成形機の横長の辺を横切り、取り出し側へ張り出す。
 - 取り出し側（成形機の 2 つの長辺のどちらに成形品を落とすか）は、頼みに書いてあればそれ。無ければ、その成形機につないだ取出機が張り出している側、取出機が無ければ付帯設備がある側。どれも無いとき（新しく付けるとき）だけ、成形機が横（長辺が x）なら下（y の大きい側）、縦（長辺が y）なら右（x の大きい側）。整えるときは今の側を変えない。
@@ -162,6 +162,8 @@ export function aiInstructions(templates: readonly EquipmentTemplate[] = INJECTI
 - { "type": "rotate", "ids": ["eq-1"], "quarterTurns": 1 } 設備を中心のまわりに 90° × n 回す（正が時計回り）
 - { "type": "rotateAbout", "ids": ["eq-1", "eq-2"], "quarterTurns": 1, "pivot": { "x": 5000, "y": 3000 } }
   設備をまとめて pivot のまわりに回す（位置も向きも回る）。ユニットごと回すときは、基準の設備の中心を pivot に、基準と members を ids に
+- { "type": "placeUnits", "count": 7, "columns": 1, "orientation": "horizontal", "x": 40000, "y": 2000 }
+  基準の設備（成形機）を付帯設備つきのユニットで並べる。列は成形機を短い辺の向きに積んだ並び（横なら上下に積む）。間隔は隣のユニットの本体が余白に入らない最小。x, y はまとまりの本体の左上。省ける項目: columns（1）、orientation（horizontal）、side・toward（attachUnit と同じ）、kind（基準の種類）、x と y（置いてある設備の右）
 - { "type": "attachUnit", "ids": ["eq-2"], "side": "bottom", "toward": "left" }
   基準の設備（ids）に、組の決まりどおりの付帯設備を置いてつなぐ（ユニットに同じ種類があれば動かして使う）。省ける項目: side（取り出し側。横の基準は top・bottom、縦は left・right）、toward（後工程を並べる向き。横は left・right、縦は top・bottom）。省くと、つないだ取出機・付帯設備の位置から、無ければ横は下・左、縦は右・上
 - { "type": "arrangeUnits", "ids": ["eq-2"] } ユニットの付帯設備を、今の並びの順と向きのまま、余白ちょうどの間隔で列に揃える（基準の設備と載る設備は動かさない）。ids を省くと全部のユニット

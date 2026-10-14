@@ -4,6 +4,7 @@
 
 import { DEFAULT_AISLE_WIDTH, nextAisleId, nextAisleName, type Aisle } from './aisle'
 import { arrangeUnit, attachUnit, forAnchors, type Side } from './attach'
+import { placeBlock } from './block'
 import { applyCommand, type Command } from './commands'
 import { FLOW_LIMITS, nextEquipmentId, nextEquipmentIds, type FlowSettings, type Rotation, type Scene } from './scene'
 import { siteArea } from './site'
@@ -47,7 +48,7 @@ const PASS = {
 const PASS_TYPES = Object.keys(PASS) as (keyof typeof PASS)[]
 
 // AI が出せる指示の種類（AI への説明に使う）
-export const AI_COMMAND_TYPES: readonly string[] = ['place', 'addAisle', 'duplicate', 'attachUnit', 'arrangeUnits', ...PASS_TYPES]
+export const AI_COMMAND_TYPES: readonly string[] = ['place', 'addAisle', 'duplicate', 'placeUnits', 'attachUnit', 'arrangeUnits', ...PASS_TYPES]
 
 // AI からは使わせない画面のコマンドと、その理由
 const REFUSED: Record<string, string> = {
@@ -136,6 +137,7 @@ function toCommand(scene: Scene, raw: unknown): ToCommand {
   if (REFUSED[type]) return no(REFUSED[type]!)
   if (type === 'place') return place(scene, r)
   if (type === 'attachUnit' || type === 'arrangeUnits') return unitCommand(scene, r, type)
+  if (type === 'placeUnits') return placeUnits(scene, r)
   if (type === 'addAisle') return addAisle(scene, r)
   if (type === 'duplicate') {
     const bad = checkFields(r, { ids: 'ids', dx: 'length', dy: 'length' })
@@ -248,6 +250,31 @@ function unitCommand(scene: Scene, r: Record<string, unknown>, type: 'attachUnit
   })
   if (!res.ok) return no(res.error)
   return { ok: true, command: res.command, text: `${type === 'attachUnit' ? '付帯設備を付ける' : '付帯設備を整える'}: ${res.notes.join('。')}` }
+}
+
+// ユニットのまとまりを並べる（block.ts）
+function placeUnits(scene: Scene, r: Record<string, unknown>): ToCommand {
+  const no = (error: string): ToCommand => ({ ok: false, error })
+  for (const k of ['count', 'columns'] as const) if (r[k] !== undefined && typeof r[k] !== 'number') return no(`${k} は数にしてください`)
+  if (r.count === undefined) return no('count（台数）がありません')
+  if (r.orientation !== undefined && r.orientation !== 'horizontal' && r.orientation !== 'vertical') return no('orientation は horizontal か vertical です')
+  for (const k of ['side', 'toward'] as const)
+    if (r[k] !== undefined && !SIDES.includes(r[k] as (typeof SIDES)[number])) return no(`${k} は ${SIDES.join('・')} のどれかです`)
+  if (r.kind !== undefined && typeof r.kind !== 'string') return no('kind は文字列にしてください')
+  const hasX = r.x !== undefined
+  if (hasX !== (r.y !== undefined)) return no('x と y は両方書くか、両方省いてください')
+  if (hasX && (checkField(r.x, 'length') || checkField(r.y, 'length'))) return no(`x・y は ${LIMIT_TEXT}`)
+  const res = placeBlock(scene, {
+    kind: r.kind as string | undefined,
+    count: r.count as number,
+    columns: r.columns as number | undefined,
+    orientation: r.orientation as 'horizontal' | 'vertical' | undefined,
+    side: r.side as Side | undefined,
+    toward: r.toward as Side | undefined,
+    origin: hasX ? { x: r.x as number, y: r.y as number } : undefined,
+  })
+  if (!res.ok) return no(res.error)
+  return { ok: true, command: res.command, text: `並べる: ${res.note}` }
 }
 
 // 通路を描く。幅を省けば最初の値、周回を省けば開いた通路、一方通行を省けば両方向
