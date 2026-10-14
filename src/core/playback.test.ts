@@ -47,7 +47,7 @@ describe('prepareFlow', () => {
 
   it('つなぎ・ストッカー・通路が無ければ知らせる', () => {
     expect(prepareFlow(cell([])).warnings[0]).toMatch('成形品の生まれる設備がありません')
-    expect(prepareFlow(cell([{ from: 'm', to: 'w' }])).warnings).toEqual(['流れの先に台車ストッカーがありません'])
+    expect(prepareFlow(cell([{ from: 'm', to: 'w' }])).warnings).toEqual(['流れの先にストッカー（役割が「溜める」の設備）がありません'])
     const m = prepareFlow(cell(undefined, []))
     expect(m.warnings[0]).toMatch('AGV の通路がありません')
     expect(m.routes.s1).toBeNull()

@@ -80,6 +80,7 @@ export function planLiveApply(set: PlanSet, req: Extract<LiveRequest, { type: 'a
   if (typeof source === 'string') return { ok: false, error: source }
   const checked = planAiCommands(source.scene, req.commands)
   if (!checked.ok) return { ok: false, error: `${checked.error}。どの指示も当てていません` }
+  if (checked.steps.length === 0) return { ok: false, error: '変えるものがありません（もう決まりどおりです）。何も当てていません' }
   const command: Command = { type: 'batch', commands: checked.steps.map((s) => s.command) }
   const steps = checked.steps.map((s) => s.text)
   if (!req.newPlan) {

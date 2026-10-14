@@ -5,6 +5,7 @@
 
 import { aisleSegments, type Aisle } from './aisle'
 import { clearanceRect, footprint, worldClearance, type Equipment, type Scene } from './scene'
+import { findTemplate } from './templates'
 import type { Point, Rect } from './viewport'
 
 // 接しているだけとみなす誤差（mm）
@@ -145,11 +146,14 @@ export function clearanceZone(eq: Equipment): Rect[] {
   return out.filter((q) => q.width > EPS && q.height > EPS)
 }
 
-// 取出機は成形機の上に載る。つないだ成形機と取出機の組（どちら向きでも）は、本体の重なりも余白への入り込みも示さない
-const MOUNTED: readonly [string, string][] = [['molding-machine', 'take-out-robot']]
-
+// 役割が「載る」の種類は、載り先の種類の上に重ねて置く（射出成形の組では取出機が成形機に載る）。
+// つないだ載る設備と載り先の組（どちら向きでも）は、本体の重なりも余白への入り込みも示さない
 export function isMounted(scene: Scene, a: Equipment, b: Equipment): boolean {
-  const pair = MOUNTED.some(([p, q]) => (a.kind === p && b.kind === q) || (a.kind === q && b.kind === p))
+  const on = (x: Equipment, y: Equipment) => {
+    const t = findTemplate(scene.templates, x.kind)
+    return t?.role === 'mounted' && t.mountsOn === y.kind
+  }
+  const pair = on(a, b) || on(b, a)
   return pair && scene.links.some((l) => (l.from === a.id && l.to === b.id) || (l.from === b.id && l.to === a.id))
 }
 

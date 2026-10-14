@@ -142,7 +142,7 @@ describe('案の束のファイル', () => {
 
   it('シーン 1 つだけのファイルは、渡した名前の案 1 つとして読む', () => {
     const r = parsePlanFile(serializeScene(withEq('a')), 'layout-old')
-    expect(r).toEqual({ ok: true, plans: [{ id: 'plan-1', name: 'layout-old', scene: withEq('a') }], active: 'plan-1' })
+    expect(r).toEqual({ ok: true, plans: [{ id: 'plan-1', name: 'layout-old', scene: withEq('a'), layout: { id: 'L01', signature: 'molding-machine/H:0' } }], active: 'plan-1' })
     // 古い版のシーンも、シーンのファイルと同じ変換で読む
     const old = parsePlanFile(JSON.stringify({ version: 1, background: null, equipment: [] }), 'v1')
     expect(old.ok && old.plans[0]!.scene).toEqual(createEmptyScene())

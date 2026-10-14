@@ -8,7 +8,7 @@ import { aiInstructions, summarizeScene } from '../src/core/aiPrompt'
 import { applyCommand } from '../src/core/commands'
 import { planMetrics } from '../src/core/compare'
 import { findPlan, type LiveAsk, type LiveResponse } from '../src/core/live'
-import { applyPlanCommand, nextPlanIds, type Plan, type PlanSet } from '../src/core/plans'
+import { applyPlanCommand, layoutGroups, nextPlanIds, type Plan, type PlanSet } from '../src/core/plans'
 import type { Scene } from '../src/core/scene'
 import { PLAN_FILE_FORMAT, parsePlanFile, serializePlanSet, serializeScene } from '../src/core/sceneFile'
 
@@ -48,8 +48,10 @@ const COMMANDS = {
 export const TOOLS: ToolDef[] = [
   {
     name: 'get_instructions',
-    description: '図面の決まり（mm、座標の向き）、指示（コマンド）の書き方、設備の種類と寸法、配置のこつを返す。指示を書く前に 1 回読む',
-    inputSchema: { type: 'object', properties: {} },
+    description:
+      '図面の決まり（mm、座標の向き）、指示（コマンド）の書き方、設備の種類（案ごとの一覧）と寸法、配置のこつを返す。指示を書く前に 1 回読む。' +
+      'file か、つながっている画面があればその案の種類の一覧で、どちらも無ければ射出成形の組で書く',
+    inputSchema: { type: 'object', properties: { file: FILE, plan: PLAN } },
   },
   {
     name: 'summarize',
@@ -145,7 +147,7 @@ export async function callTool(name: string, args: Args | undefined, ctx: Contex
   const a = args ?? {}
   switch (name) {
     case 'get_instructions':
-      return ok(aiInstructions())
+      return instructions(a, ctx)
     case 'summarize':
       return summarize(a, ctx)
     case 'check_commands':
@@ -182,6 +184,20 @@ async function read(src: Source, io: FileIo): Promise<{ ok: true; file: Loaded }
 
 const where = (src: Source) => (src.kind === 'file' ? { file: src.path } : { screen: true })
 
+// 設備の種類は案ごとに違うので、読める案があればその一覧で書く
+async function instructions(a: Args, ctx: Context): Promise<ToolResult> {
+  const src = source(a, ctx)
+  if (typeof src === 'string') {
+    if (a.file !== undefined) return err(src)
+    return ok(aiInstructions())
+  }
+  const l = await read(src, ctx.io)
+  if (!l.ok) return err(l.error)
+  const p = findPlan(l.file.set, a.plan)
+  if (typeof p === 'string') return err(p)
+  return ok(aiInstructions(p.scene.templates))
+}
+
 async function summarize(a: Args, ctx: Context): Promise<ToolResult> {
   const src = source(a, ctx)
   if (typeof src === 'string') return err(src)
@@ -192,7 +208,8 @@ async function summarize(a: Args, ctx: Context): Promise<ToolResult> {
   return ok(
     json({
       ...where(src),
-      plans: l.file.set.plans.map((q) => ({ id: q.id, name: q.name, equipment: q.scene.equipment.length, active: q.id === l.file.set.active })),
+      plans: l.file.set.plans.map((q) => ({ id: q.id, name: q.name, layout: q.layout?.id ?? null, equipment: q.scene.equipment.length, active: q.id === l.file.set.active })),
+      layouts: layoutGroups(l.file.set).map((g) => ({ id: g.id, description: g.description, plans: g.plans.map((q) => q.id) })),
       plan: { id: p.id, name: p.name },
       metrics: metrics(p.scene),
       scene: summarizeScene(p.scene),
@@ -215,6 +232,8 @@ async function run(a: Args, ctx: Context, apply: boolean): Promise<ToolResult> {
 
   const plan = planAiCommands(p.scene, c.commands)
   if (!plan.ok) return err(`${plan.error}。どの指示も当てていません${apply ? '（何も変えていません）' : ''}`)
+  // 付ける・整えるで、もう決まりどおりなら変えるものが無い
+  if (plan.steps.length === 0) return ok(json({ ok: true, applied: false, ...where(src), plan: { id: p.id, name: p.name }, message: '変えるものがありません（もう決まりどおりです）' }))
   // 画面と同じく、batch コマンド 1 つにまとめて当てる（画面では 1 回の元に戻すで戻る形）
   const r = applyCommand(p.scene, { type: 'batch', commands: plan.steps.map((s) => s.command) })
   if (!r.ok) return err(`${r.error}。どの指示も当てていません`)

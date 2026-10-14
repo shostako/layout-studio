@@ -6,12 +6,14 @@ import { calibrate, checkBackground, type Background } from './background'
 import { checkLink, sameLink, type Link } from './flow'
 import { checkSite, type Site } from './site'
 import { DEFAULT_FLOW_SETTINGS, FLOW_LIMITS, NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type FlowSettings, type Rotation, type Scene } from './scene'
+import { INJECTION_PRESET, checkTemplates, normalizeTemplates, type EquipmentTemplate } from './templates'
 import type { Point } from './viewport'
 
 export type Command =
   | { type: 'add'; equipment: Equipment } // 設備を置く。id は呼ぶ側が決める（nextEquipmentId）
   | { type: 'move'; ids: string[]; dx: number; dy: number } // 設備をずらす（mm）
   | { type: 'rotate'; ids: string[]; quarterTurns: number } // 各設備の中心のまわりに 90 度 × n 回す。正が時計回り
+  | { type: 'rotateAbout'; ids: string[]; quarterTurns: number; pivot: Point } // 設備をまとめて pivot のまわりに 90 度 × n 回す（中心の位置も向きも回る。ユニットごと回すのに使う）。正が時計回り
   | { type: 'remove'; ids: string[] } // 設備を消す。その設備につないだつなぎも消す
   | { type: 'duplicate'; ids: string[]; newIds: string[]; dx: number; dy: number } // 設備を写して dx, dy ずらして置く。新しい id は呼ぶ側が決め、ids と同じ順に並べる。写した設備どうしのつなぎも写す
   | { type: 'update'; ids: string[]; changes: EquipmentChanges } // 置いた設備の名前・寸法・色・余白を変える。寸法を変えても外接の長方形の左上と回転は動かさない
@@ -27,6 +29,7 @@ export type Command =
   | { type: 'link'; links: Link[] } // 工程のつなぎを足す（from → to）。1 本でも断られたら、どれも足さない
   | { type: 'unlink'; links: Link[] } // 工程のつなぎを外す
   | { type: 'setFlow'; changes: Partial<FlowSettings> } // 流れの再生の数値（サイクル・ストッカーの容量・AGV の速さ・入れ替えの時間）を変える。書いたものだけ変える
+  | { type: 'setTemplates'; templates: EquipmentTemplate[] } // 設備の種類（ひな形）の一覧を差し替える（足す・変える・消す・並べ替える）。置いてある設備の種類は消せない。置いた設備は変えない
   | { type: 'loadScene'; scene: Scene } // シーンをまるごと差し替える（ファイルを開く・新規）。中身は 1 つずつ確かめ直す
   | { type: 'batch'; commands: Command[] } // コマンドを順に当て、まとめて 1 つの操作にする（AI の 1 回の応答など）。1 つでも断られたら、どれも当てない
 
@@ -47,6 +50,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return move(scene, cmd.ids, cmd.dx, cmd.dy)
     case 'rotate':
       return rotate(scene, cmd.ids, cmd.quarterTurns)
+    case 'rotateAbout':
+      return rotateAbout(scene, cmd.ids, cmd.quarterTurns, cmd.pivot)
     case 'remove':
       return remove(scene, cmd.ids)
     case 'duplicate':
@@ -77,6 +82,8 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return unlink(scene, cmd.links)
     case 'setFlow':
       return setFlow(scene, cmd.changes)
+    case 'setTemplates':
+      return setTemplates(scene, cmd.templates)
     case 'loadScene':
       return loadScene(cmd.scene)
     case 'batch':
@@ -161,6 +168,28 @@ function remove(scene: Scene, ids: string[]): CommandResult {
 }
 
 // 写しは元の設備の並び順のまま末尾に足す。名前は番号の続きにする（duplicateName）
+function rotateAbout(scene: Scene, ids: string[], quarterTurns: number, pivot: Point): CommandResult {
+  const bad = checkIds(scene, ids)
+  if (bad) return fail(bad)
+  if (!Number.isInteger(quarterTurns)) return fail('回す量は 90 度の整数倍です')
+  if (typeof pivot !== 'object' || pivot === null || !Number.isFinite(pivot.x) || !Number.isFinite(pivot.y)) return fail('回す中心（pivot）が点ではありません')
+  const q = ((quarterTurns % 4) + 4) % 4
+  // 画面は y が下向きなので、時計回りの 90 度は (dx, dy) → (-dy, dx)
+  const spin = (dx: number, dy: number): [number, number] => {
+    let [x, y] = [dx, dy]
+    for (let i = 0; i < q; i++) [x, y] = [-y, x]
+    return [x, y]
+  }
+  const turn = (r: Rotation): Rotation => ROTATIONS[(r / 90 + q) % 4]!
+  return {
+    ok: true,
+    scene: updateEach(scene, ids, (e) => {
+      const [dx, dy] = spin(e.x - pivot.x, e.y - pivot.y)
+      return { ...e, x: pivot.x + dx, y: pivot.y + dy, rotation: turn(e.rotation) }
+    }),
+  }
+}
+
 function duplicate(scene: Scene, ids: string[], newIds: string[], dx: number, dy: number): CommandResult {
   const bad = checkIds(scene, ids)
   if (bad) return fail(bad)
@@ -354,6 +383,16 @@ function checkFlow(f: unknown, all: boolean): string | null {
   return null
 }
 
+function setTemplates(scene: Scene, templates: EquipmentTemplate[]): CommandResult {
+  const bad = checkTemplates(templates)
+  if (bad) return fail(bad)
+  const kinds = new Set(templates.map((t) => t.kind))
+  // 一覧にあった種類で、置いてある設備が使っているものは消せない（一覧に無い種類の設備は、前から無いのでそのまま）
+  const gone = scene.templates.filter((t) => !kinds.has(t.kind) && scene.equipment.some((e) => e.kind === t.kind))
+  if (gone.length) return fail(`置いてある設備の種類は消せません: ${gone.map((t) => t.name).join('、')}（先に設備を消してください）`)
+  return { ok: true, scene: { ...scene, templates: normalizeTemplates(templates) } }
+}
+
 function setFlow(scene: Scene, changes: Partial<FlowSettings>): CommandResult {
   const bad = checkFlow(changes, false)
   if (bad) return fail(bad)
@@ -383,7 +422,11 @@ function loadScene(next: Scene): CommandResult {
   if (typeof next !== 'object' || next === null) return fail('シーンの形ではありません')
   if (next.version !== SCENE_VERSION) return fail(`シーンの版が違います（${String(next.version)}。読めるのは ${SCENE_VERSION}）`)
   if (!Array.isArray(next.equipment)) return fail('設備の一覧（equipment）がありません')
-  let r: CommandResult = { ok: true, scene: createEmptyScene() }
+  // 種類の一覧を書かなければ射出成形の組（AI が一覧を書かずにシーンを作れるように）
+  const templates = next.templates === undefined ? INJECTION_PRESET : next.templates
+  const badT = checkTemplates(templates)
+  if (badT) return fail(badT)
+  let r: CommandResult = { ok: true, scene: createEmptyScene(normalizeTemplates(templates)) }
   if (next.background !== null && next.background !== undefined) {
     if (typeof next.background !== 'object') return fail('背景（background）の形ではありません')
     r = setBackground(r.scene, next.background)

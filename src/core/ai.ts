@@ -3,10 +3,13 @@
 // 1 つでも断られたら、どれも当てない（理由と何番目かを返す）。当てるのは呼ぶ側で、batch コマンドにまとめて 1 回の操作にする。
 
 import { DEFAULT_AISLE_WIDTH, nextAisleId, nextAisleName, type Aisle } from './aisle'
+import { arrangeUnit, attachUnit, forAnchors, hasRecipe, type Side } from './attach'
+import { placeBlock } from './block'
 import { applyCommand, type Command } from './commands'
 import { FLOW_LIMITS, nextEquipmentId, nextEquipmentIds, type FlowSettings, type Rotation, type Scene } from './scene'
 import { siteArea } from './site'
-import { TEMPLATES, equipmentFromTemplate, findTemplate, nextEquipmentName } from './templates'
+import { equipmentFromTemplate, findTemplate, nextEquipmentName, type EquipmentTemplate } from './templates'
+import { unitsOf } from './unit'
 import type { Point } from './viewport'
 
 // 1 回の応答で受け付ける指示の数の上限
@@ -25,10 +28,11 @@ export type AiCommand =
   | Extract<Command, { type: (typeof PASS_TYPES)[number] }>
 
 // そのまま画面のコマンドとして通す指示と、その項目の形
-type Field = 'ids' | 'id' | 'length' | 'number' | 'object' | 'links' | 'points' | 'site'
+type Field = 'ids' | 'id' | 'length' | 'number' | 'object' | 'array' | 'point' | 'links' | 'points' | 'site'
 const PASS = {
   move: { ids: 'ids', dx: 'length', dy: 'length' },
   rotate: { ids: 'ids', quarterTurns: 'number' },
+  rotateAbout: { ids: 'ids', quarterTurns: 'number', pivot: 'point' },
   remove: { ids: 'ids' },
   update: { ids: 'ids', changes: 'object' },
   updateAisle: { ids: 'ids', changes: 'object' },
@@ -39,11 +43,12 @@ const PASS = {
   unlink: { links: 'links' },
   setFlow: { changes: 'object' },
   setSite: { site: 'site' },
+  setTemplates: { templates: 'array' },
 } as const satisfies Record<string, Record<string, Field>>
 const PASS_TYPES = Object.keys(PASS) as (keyof typeof PASS)[]
 
 // AI が出せる指示の種類（AI への説明に使う）
-export const AI_COMMAND_TYPES: readonly string[] = ['place', 'addAisle', 'duplicate', ...PASS_TYPES]
+export const AI_COMMAND_TYPES: readonly string[] = ['place', 'addAisle', 'duplicate', 'placeUnits', 'attachUnit', 'arrangeUnits', ...PASS_TYPES]
 
 // AI からは使わせない画面のコマンドと、その理由
 const REFUSED: Record<string, string> = {
@@ -105,6 +110,8 @@ export function planAiCommands(scene: Scene, commands: readonly unknown[]): AiPl
     const refuse = (error: string): AiPlan => ({ ok: false, index: i, error: `${i + 1} 番目の指示${label}: ${error}` })
     const c = toCommand(current, raw)
     if (!c.ok) return refuse(c.error)
+    // 付ける・整えるで、もう決まりどおりなら当てるものが無い
+    if (c.command === null) continue
     let r
     try {
       r = applyCommand(current, c.command)
@@ -113,13 +120,13 @@ export function planAiCommands(scene: Scene, commands: readonly unknown[]): AiPl
       return refuse('指示の形が正しくありません')
     }
     if (!r.ok) return refuse(r.error)
-    steps.push({ command: c.command, text: describeCommand(current, c.command) })
+    steps.push({ command: c.command, text: c.text ?? describeCommand(current, c.command) })
     current = r.scene
   }
   return { ok: true, steps, scene: current }
 }
 
-type ToCommand = { ok: true; command: Command } | { ok: false; error: string }
+type ToCommand = { ok: true; command: Command | null; text?: string } | { ok: false; error: string }
 
 function toCommand(scene: Scene, raw: unknown): ToCommand {
   const no = (error: string): ToCommand => ({ ok: false, error })
@@ -129,6 +136,8 @@ function toCommand(scene: Scene, raw: unknown): ToCommand {
   const type = r.type
   if (REFUSED[type]) return no(REFUSED[type]!)
   if (type === 'place') return place(scene, r)
+  if (type === 'attachUnit' || type === 'arrangeUnits') return unitCommand(scene, r, type)
+  if (type === 'placeUnits') return placeUnits(scene, r)
   if (type === 'addAisle') return addAisle(scene, r)
   if (type === 'duplicate') {
     const bad = checkFields(r, { ids: 'ids', dx: 'length', dy: 'length' })
@@ -181,11 +190,15 @@ function checkField(v: unknown, f: Field): string | null {
       return typeof v === 'number' && Number.isFinite(v) ? null : '数にしてください'
     case 'object':
       return typeof v === 'object' && v !== null && !Array.isArray(v) ? null : '{ … } の形にしてください'
+    case 'array':
+      return Array.isArray(v) ? null : '[ … ] の配列にしてください'
     case 'links':
       return Array.isArray(v) &&
         v.every((l) => typeof l === 'object' && l !== null && typeof l.from === 'string' && typeof l.to === 'string')
         ? null
         : '{ "from", "to" } の配列にしてください'
+    case 'point':
+      return checkPoints([v]) ? '点 { "x", "y" } にしてください' : null
     case 'points':
       return checkPoints(v)
     case 'site':
@@ -199,8 +212,8 @@ function checkField(v: unknown, f: Field): string | null {
 function place(scene: Scene, r: Record<string, unknown>): ToCommand {
   const no = (error: string): ToCommand => ({ ok: false, error })
   if (typeof r.kind !== 'string') return no('kind（設備の種類）がありません')
-  const t = findTemplate(r.kind)
-  if (!t) return no(`知らない設備の種類です: ${r.kind}（使えるのは ${TEMPLATES.map((x) => x.kind).join(', ')}）`)
+  const t = findTemplate(scene.templates, r.kind)
+  if (!t) return no(`知らない設備の種類です: ${r.kind}（使えるのは ${scene.templates.map((x) => x.kind).join(', ')}。種類を足すには setTemplates）`)
   const bad = checkFields(r, { x: 'length', y: 'length' })
   if (bad) return no(bad)
   if (r.id !== undefined && checkField(r.id, 'id')) return no('id は文字列にしてください')
@@ -216,6 +229,53 @@ function place(scene: Scene, r: Record<string, unknown>): ToCommand {
     rotation: r.rotation as Rotation | undefined,
   })
   return { ok: true, command: { type: 'add', equipment } }
+}
+
+const SIDES = ['top', 'bottom', 'left', 'right'] as const
+
+// 付帯設備を付ける（attachUnit）・整える（arrangeUnits）。計算は attach.ts。ids は基準の設備（整えるは省くと全部）
+function unitCommand(scene: Scene, r: Record<string, unknown>, type: 'attachUnit' | 'arrangeUnits'): ToCommand {
+  const no = (error: string): ToCommand => ({ ok: false, error })
+  if (r.ids !== undefined && checkField(r.ids, 'ids')) return no('ids は基準の設備の id の配列にしてください')
+  for (const k of ['side', 'toward'] as const)
+    if (r[k] !== undefined && !SIDES.includes(r[k] as (typeof SIDES)[number])) return no(`${k} は ${SIDES.join('・')} のどれかです`)
+  // ids を省いた整えるは、付帯設備の決まりがある基準の設備だけ
+  const all = [...unitsOf(scene).keys()].filter((id) => hasRecipe(scene.equipment.find((e) => e.id === id)!))
+  const ids = (r.ids as string[] | undefined) ?? (type === 'arrangeUnits' ? all : undefined)
+  if (!ids || ids.length === 0) return no(type === 'attachUnit' ? 'ids（付ける基準の設備の id）がありません' : '基準の設備がありません')
+  const opts = { side: r.side as Side | undefined, toward: r.toward as Side | undefined }
+  const f = type === 'attachUnit' ? (s: Scene, id: string) => attachUnit(s, id, opts) : (s: Scene, id: string) => arrangeUnit(s, id)
+  const res = forAnchors(scene, ids, f, (s, c) => {
+    const a = applyCommand(s, c)
+    return a.ok ? a.scene : a.error
+  })
+  if (!res.ok) return no(res.error)
+  return { ok: true, command: res.command, text: `${type === 'attachUnit' ? '付帯設備を付ける' : '付帯設備を整える'}: ${res.notes.join('。')}` }
+}
+
+// ユニットのまとまりを並べる（block.ts）
+function placeUnits(scene: Scene, r: Record<string, unknown>): ToCommand {
+  const no = (error: string): ToCommand => ({ ok: false, error })
+  for (const k of ['count', 'columns'] as const) if (r[k] !== undefined && typeof r[k] !== 'number') return no(`${k} は数にしてください`)
+  if (r.count === undefined) return no('count（台数）がありません')
+  if (r.orientation !== undefined && r.orientation !== 'horizontal' && r.orientation !== 'vertical') return no('orientation は horizontal か vertical です')
+  for (const k of ['side', 'toward'] as const)
+    if (r[k] !== undefined && !SIDES.includes(r[k] as (typeof SIDES)[number])) return no(`${k} は ${SIDES.join('・')} のどれかです`)
+  if (r.kind !== undefined && typeof r.kind !== 'string') return no('kind は文字列にしてください')
+  const hasX = r.x !== undefined
+  if (hasX !== (r.y !== undefined)) return no('x と y は両方書くか、両方省いてください')
+  if (hasX && (checkField(r.x, 'length') || checkField(r.y, 'length'))) return no(`x・y は ${LIMIT_TEXT}`)
+  const res = placeBlock(scene, {
+    kind: r.kind as string | undefined,
+    count: r.count as number,
+    columns: r.columns as number | undefined,
+    orientation: r.orientation as 'horizontal' | 'vertical' | undefined,
+    side: r.side as Side | undefined,
+    toward: r.toward as Side | undefined,
+    origin: hasX ? { x: r.x as number, y: r.y as number } : undefined,
+  })
+  if (!res.ok) return no(res.error)
+  return { ok: true, command: res.command, text: `並べる: ${res.note}` }
 }
 
 // 通路を描く。幅を省けば最初の値、周回を省けば開いた通路、一方通行を省けば両方向
@@ -250,6 +310,26 @@ function names(list: readonly { id: string; name: string }[], ids: readonly stri
   return ns.length <= 3 ? ns.join('、') : `${ns.slice(0, 3).join('、')} ほか ${ns.length - 3} ${unit}`
 }
 
+// ひな形の一覧の差し替えを、足す・消す・変える種類の名前で書く
+function describeTemplates(before: readonly EquipmentTemplate[], after: readonly EquipmentTemplate[]): string {
+  const added = after.filter((t) => !before.some((b) => b.kind === t.kind)).map((t) => t.name)
+  const removed = before.filter((b) => !after.some((t) => t.kind === b.kind)).map((t) => t.name)
+  const changed = after
+    .filter((t) => {
+      const b = before.find((x) => x.kind === t.kind)
+      return b !== undefined && JSON.stringify(b) !== JSON.stringify(t)
+    })
+    .map((t) => t.name)
+  const order = (list: readonly EquipmentTemplate[]) => list.map((t) => t.kind).filter((k) => before.some((b) => b.kind === k) && after.some((a) => a.kind === k)).join()
+  const parts = [
+    added.length ? `足す: ${added.join('、')}` : '',
+    removed.length ? `消す: ${removed.join('、')}` : '',
+    changed.length ? `変える: ${changed.join('、')}` : '',
+    order(before) !== order(after) ? '並べ替える' : '',
+  ].filter(Boolean)
+  return `設備の種類の一覧を変える（${parts.join('。') || '変わりなし'}）`
+}
+
 // コマンドを人が読む文にする。scene は当てる前のシーン
 export function describeCommand(scene: Scene, cmd: Command): string {
   const eqNames = (ids: readonly string[]) => names(scene.equipment, ids, '台')
@@ -264,6 +344,8 @@ export function describeCommand(scene: Scene, cmd: Command): string {
       return `${eqNames(cmd.ids)} を動かす（x ${signed(cmd.dx)}・y ${signed(cmd.dy)}）`
     case 'rotate':
       return `${eqNames(cmd.ids)} を${cmd.quarterTurns >= 0 ? '時計回り' : '反時計回り'}に ${Math.abs(cmd.quarterTurns) * 90}° 回す`
+    case 'rotateAbout':
+      return `${eqNames(cmd.ids)} をまとめて (${mm(cmd.pivot.x)}, ${mm(cmd.pivot.y)}) のまわりに${cmd.quarterTurns >= 0 ? '時計回り' : '反時計回り'}に ${Math.abs(cmd.quarterTurns) * 90}° 回す`
     case 'remove':
       return `${eqNames(cmd.ids)} を消す`
     case 'duplicate':
@@ -315,6 +397,8 @@ export function describeCommand(scene: Scene, cmd: Command): string {
     case 'calibrateBackground':
     case 'moveBackground':
       return '背景の図面を変える'
+    case 'setTemplates':
+      return describeTemplates(scene.templates, cmd.templates)
     case 'loadScene':
       return 'シーンを差し替える'
     case 'batch':

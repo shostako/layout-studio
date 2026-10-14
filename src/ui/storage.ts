@@ -9,8 +9,8 @@ import { parsePlanFile, sceneFileName, serializePlanSet } from '../core/sceneFil
 
 // 例の配置（架空の寸法）。ファイルは public/examples/ にあり、src/core/examples.test.ts が読めることと注意が無いことを確かめる
 export const EXAMPLES = [
-  { label: '成形機 7 台（4 案）', file: 'molding-7.json' },
-  { label: '成形機 14 台（2 列・4 案）', file: 'molding-14.json' },
+  { label: '成形機 7 台・1 列（2 案）', file: 'molding-7.json' },
+  { label: '成形機 14 台・2 列（3 案）', file: 'molding-14.json' },
 ] as const
 
 const DB_NAME = 'layout-studio'

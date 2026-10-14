@@ -186,6 +186,9 @@ body {
   gap: 6px;
   align-items: center;
   text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .template button.active {
   outline: 2px solid var(--axes);
@@ -214,8 +217,44 @@ body {
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin: 6px 0;
+}
+/* 付帯設備を付ける・整える */
+.attach-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--muted);
+}
+.attach-options label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+}
+.attach-options select {
+  font: inherit;
+}
+/* 設備の種類の編集 */
+.kind-panel {
+  margin: 4px 0 8px;
+}
+.kind-panel summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.kind-panel .actions {
+  flex-wrap: wrap;
+}
+.kind-panel .actions button {
+  white-space: nowrap;
+}
+.kind-panel select {
+  font: inherit;
+  min-width: 0;
 }
 .message {
   color: #c0392b;
@@ -257,6 +296,18 @@ body {
 .equipment.selected rect {
   stroke: var(--axes);
   stroke-width: 3;
+}
+.equipment.unit-member rect {
+  stroke: var(--axes);
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+}
+.unit-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .equipment.outside rect {
   stroke: #d32f2f;
@@ -612,6 +663,22 @@ body {
   flex: 1;
   min-width: 0;
   font: inherit;
+}
+.plan-list .layout-head {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 4px 0 1px;
+  font-variant-numeric: tabular-nums;
+}
+.layout-change {
+  margin: 6px 0;
+  padding: 6px;
+  border: 1px solid var(--axes);
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.layout-change[hidden] {
+  display: none;
 }
 .plan-panel .actions {
   display: flex;
@@ -1037,4 +1104,8 @@ body {
 
 .toolbar button.active {
   outline: 2px solid var(--axes);
+}
+/* ユニットを並べる: 見出しが長いので欄を広く */
+.block-panel .props label {
+  grid-template-columns: 6.5em 1fr;
 }

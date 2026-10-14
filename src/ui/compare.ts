@@ -99,6 +99,7 @@ export function mountCompare(canvas: Canvas, editor: Editor, plans: Plans): void
       return c
     }
     const header = tr([
+      cell('th', 'レイアウト', 'レイアウトの番号（基準の設備の並び）'),
       cell('th', '案'),
       ...cols.map((c) => cell('th', c.label, c.title, 'num')),
       cell('th', '台数', '設備の台数', 'num'),
@@ -112,6 +113,7 @@ export function mountCompare(canvas: Canvas, editor: Editor, plans: Plans): void
         : ''
       const siteTitle = m.siteArea === null ? '敷地なし' : `${num(m.siteArea / 1e6 / M2_PER_TSUBO)} 坪`
       const r = tr([
+        cell('td', p.layout?.id ?? '—'),
         cell('td', p.name),
         ...cols.map((c, k) =>
           cell('td', c.text(m), k === 0 ? siteTitle : k === 1 ? extentTitle : '', `num${best[k]!.has(i) ? ' best' : ''}`),

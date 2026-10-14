@@ -3,7 +3,6 @@
 
 import { equipmentBounds, type Scene } from './scene'
 import { siteBounds } from './site'
-import { TEMPLATES } from './templates'
 
 export type AiClient = {
   name: string
@@ -32,7 +31,8 @@ export function stubReply(request: string, scene: Scene): string {
   }
 
   // 「〇〇を n 台、d mm 間隔で横（縦）に並べて」
-  const t = TEMPLATES.find((x) => text.includes(x.name))
+  // 名前の長い種類から探す（「台車ストッカー」と「ストッカー」のように、名前が名前を含むことがあるため）
+  const t = [...scene.templates].sort((a, b) => b.name.length - a.name.length).find((x) => text.includes(x.name))
   const count = num(/(\d+)\s*台/)
   if (t && count !== undefined && /並べ/.test(text)) {
     if (count < 1 || count > 20) return reply('1 台から 20 台までにしてください。', [])

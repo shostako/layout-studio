@@ -19,9 +19,8 @@
 import { linkSegment } from './flow'
 import { buildRouteNet, pathLength, pointAlong, shortestPath } from './route'
 import { DEFAULT_FLOW_SETTINGS, type FlowSettings, type Scene } from './scene'
+import { roleOf } from './templates'
 import type { Point } from './viewport'
-
-export const STOCKER_KIND = 'cart-stocker'
 
 // サイクル・容量・AGV の速さと入れ替えの時間はシーンの flow（案ごとに画面で変える）。移る速さは見せ方の値で固定
 export type FlowParams = FlowSettings & {
@@ -93,7 +92,8 @@ export function prepareFlow(scene: Scene): FlowModel {
     segments[linkKey(l.from, l.to)] = linkSegment(a, b)
   }
   const isStocker: Record<string, boolean> = {}
-  for (const e of scene.equipment) isStocker[e.id] = e.kind === STOCKER_KIND
+  // ストッカー＝役割が「溜める」の種類（射出成形の組では台車ストッカー）
+  for (const e of scene.equipment) isStocker[e.id] = roleOf(scene, e.kind) === 'buffer'
   // ストッカーから先へは成形品を送らない（台車は AGV が運ぶ）
   const sources = scene.equipment.filter((e) => next[e.id]?.length && !hasPrev.has(e.id) && !isStocker[e.id]).map((e) => e.id)
   // 生まれた所からたどって着くストッカー
@@ -110,7 +110,7 @@ export function prepareFlow(scene: Scene): FlowModel {
   const warnings: string[] = []
   const name = (id: string) => byId.get(id)?.name ?? id
   if (sources.length === 0) warnings.push('成形品の生まれる設備がありません。「工程のつなぎ」で成形機から先をつないでください')
-  else if (stockers.length === 0) warnings.push('流れの先に台車ストッカーがありません')
+  else if (stockers.length === 0) warnings.push('流れの先にストッカー（役割が「溜める」の設備）がありません')
 
   let home: Point | null = null
   const docks: Record<string, Point> = {}

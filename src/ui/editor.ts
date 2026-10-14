@@ -9,7 +9,8 @@ import { DEFAULT_SNAP, SNAP_STEPS, hitTest, snapCenter, snapMove } from '../core
 import { clearanceEquipment, findOverlaps, overlappingEquipment, type Overlap } from '../core/overlap'
 import { equipmentOutsideSite } from '../core/site'
 import { clearanceRect, createEmptyScene, equipmentBounds, footprint, nextEquipmentId, nextEquipmentIds, worldClearance, type Clearance, type Equipment, type Rotation, type Scene } from '../core/scene'
-import { TEMPLATES, equipmentFromTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
+import { equipmentFromTemplate, findTemplate, nextEquipmentName, type EquipmentTemplate } from '../core/templates'
+import { rotateWithUnits, unitsOf, withUnits } from '../core/unit'
 import { formatLength, type Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -19,6 +20,8 @@ const DRAG_THRESHOLD_PX = 3
 const TOUCH_SLOP_PX = 10
 // スナップしないときの矢印キー 1 回の移動量
 const NUDGE_NO_SNAP = 10
+// 「ユニットごと」の入り切りを覚えるキー（見る人の好み。シーンには入れない）
+const UNIT_MODE_KEY = 'layout-studio:unit-mode'
 
 // 背景の縮尺合わせなど、左クリックで図面の点を拾う道具。editor が左クリックと Esc を渡す
 export type Tool = {
@@ -104,8 +107,6 @@ export function mountEditor(canvas: Canvas): Editor {
   let snap = DEFAULT_SNAP
   let pointer: Point | null = null // 図面の座標でのカーソル
   let message = ''
-  // ひな形ごとに、次に置くときの寸法（使う人が変えられる）
-  const sizes = new Map(TEMPLATES.map((t) => [t.kind, { width: t.width, depth: t.depth }]))
 
   const layer = document.createElementNS(SVG_NS, 'g')
   layer.setAttribute('class', 'equipment-layer')
@@ -148,9 +149,19 @@ export function mountEditor(canvas: Canvas): Editor {
   const scene = (): Scene => history.present
   const liveSelection = () => selected.filter((id) => scene().equipment.some((e) => e.id === id))
 
+  // ユニットごと: 基準の設備（成形機など）を動かす・回す・写すと、そのユニットの付帯設備も一緒に（見る人の好みで、ブラウザに覚える）
+  let unitMode = true
+  try {
+    unitMode = localStorage.getItem(UNIT_MODE_KEY) !== 'off'
+  } catch {
+    // 覚えておけないブラウザでは、開いている間だけ効く
+  }
+  const expand = (ids: string[]) => (unitMode ? withUnits(scene(), ids) : ids)
   const rotateSelection = (q: number) => {
     const ids = liveSelection()
-    if (ids.length) run({ type: 'rotate', ids, quarterTurns: q })
+    if (!ids.length) return
+    const cmd = unitMode ? rotateWithUnits(scene(), ids, q) : { type: 'rotate' as const, ids, quarterTurns: q }
+    if (cmd) run(cmd)
   }
   const removeSelection = () => {
     const ids = liveSelection()
@@ -159,15 +170,18 @@ export function mountEditor(canvas: Canvas): Editor {
   }
   // 選んだ設備を写し、まとめて囲む長方形の幅に余白の分を足して右に置く。写しを選び直すので、続けて押すと横に並ぶ。
   // 余白の分は、選んだ設備の左右の余白のうち最も広いもの（写しの本体が元の余白に入らず、余白どうしは重ねて共用する）
+  // ユニットごとなら、選んだ基準の設備のユニットも写す（写しは選んでいた設備の写しだけを選び直す）
   const duplicateSelection = () => {
-    const ids = liveSelection()
+    const picked = liveSelection()
+    const ids = expand(picked)
     const items = scene().equipment.filter((e) => ids.includes(e.id))
     const box = equipmentBounds(items)
     if (!box) return
     const gap = Math.max(0, ...items.map((e) => Math.max(worldClearance(e).left, worldClearance(e).right)))
     const order = items.map((e) => e.id)
     const newIds = nextEquipmentIds(scene(), order.length)
-    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width + gap, dy: 0 })) selected = newIds
+    if (run({ type: 'duplicate', ids: order, newIds, dx: box.width + gap, dy: 0 }))
+      selected = order.flatMap((id, i) => (picked.includes(id) ? [newIds[i]!] : []))
     render()
   }
   // 欄に入った時点の選択を覚えておく。入力中にキャンバスで別の設備を選ぶと、
@@ -178,7 +192,7 @@ export function mountEditor(canvas: Canvas): Editor {
     if (ids.length) run({ type: 'update', ids, changes })
   }
   const nudge = (kx: number, ky: number) => {
-    const ids = liveSelection()
+    const ids = expand(liveSelection())
     const step = snap > 0 ? snap : NUDGE_NO_SNAP
     if (ids.length) run({ type: 'move', ids, dx: kx * step, dy: ky * step })
   }
@@ -193,8 +207,7 @@ export function mountEditor(canvas: Canvas): Editor {
     render()
   }
   const startPlacing = (t: EquipmentTemplate) => {
-    const size = sizes.get(t.kind)!
-    setMode({ type: 'placing', template: t, width: size.width, depth: size.depth, rotation: 0 })
+    setMode({ type: 'placing', template: t, width: t.width, depth: t.depth, rotation: 0 })
     selected = []
     render()
   }
@@ -210,40 +223,59 @@ export function mountEditor(canvas: Canvas): Editor {
   const list = document.createElement('div')
   list.className = 'templates'
   const templateButtons = new Map<string, HTMLButtonElement>()
-  for (const t of TEMPLATES) {
-    const row = document.createElement('div')
-    row.className = 'template'
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.title = `${t.name}を置く（クリックで位置を決める。R で回す、Esc でやめる）`
-    const sw = document.createElement('span')
-    sw.className = 'swatch'
-    sw.style.background = t.color
-    b.append(sw, document.createTextNode(t.name))
-    b.addEventListener('click', () => startPlacing(t))
-    templateButtons.set(t.kind, b)
-    const size = sizes.get(t.kind)!
-    const mkInput = (key: 'width' | 'depth', label: string) => {
-      const input = document.createElement('input')
-      input.type = 'number'
-      input.min = '1'
-      input.step = '10'
-      input.value = String(size[key])
-      input.title = `${t.name}の${label}（mm）。これから置くものに使う`
-      input.addEventListener('change', () => {
-        const v = Number(input.value)
-        if (v > 0 && Number.isFinite(v)) size[key] = v
-        else input.value = String(size[key])
-        if (mode.type === 'placing' && mode.template.kind === t.kind) mode = { ...mode, [key]: size[key] }
-        render()
-      })
-      return input
+  // ひな形の一覧はシーンが持つ（案ごと、元に戻せる）。一覧が変わったら作り直す
+  let builtFor: readonly EquipmentTemplate[] | null = null
+  const buildTemplateList = (templates: readonly EquipmentTemplate[]) => {
+    builtFor = templates
+    templateButtons.clear()
+    list.replaceChildren()
+    if (templates.length === 0) {
+      const p = document.createElement('p')
+      p.className = 'hint'
+      p.textContent = '設備の種類がありません。下の「設備の種類を編集」で足してください。'
+      list.append(p)
     }
-    const dims = document.createElement('span')
-    dims.className = 'dims'
-    dims.append(mkInput('width', '幅'), '×', mkInput('depth', '奥行'))
-    row.append(b, dims)
-    list.append(row)
+    for (const t of templates) {
+      const row = document.createElement('div')
+      row.className = 'template'
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.title = `${t.name}を置く（クリックで位置を決める。R で回す、Esc でやめる）`
+      const sw = document.createElement('span')
+      sw.className = 'swatch'
+      sw.style.background = t.color
+      b.append(sw, document.createTextNode(t.name))
+      b.addEventListener('click', () => startPlacing(findTemplate(scene().templates, t.kind) ?? t))
+      templateButtons.set(t.kind, b)
+      // 寸法はひな形そのものを変える（これから置くものに使う。置いた設備は変えない）
+      const mkInput = (key: 'width' | 'depth', label: string) => {
+        const input = document.createElement('input')
+        input.type = 'number'
+        input.min = '1'
+        input.step = '10'
+        input.value = String(t[key])
+        input.title = `${t.name}の${label}（mm）。これから置くものに使う（置いた設備は変えない）`
+        input.addEventListener('change', () => {
+          const v = Number(input.value)
+          const cur = scene().templates
+          if (!(v > 0 && Number.isFinite(v)) || !run({ type: 'setTemplates', templates: cur.map((x) => (x.kind === t.kind ? { ...x, [key]: v } : x)) }))
+            input.value = String(t[key])
+        })
+        return input
+      }
+      const dims = document.createElement('span')
+      dims.className = 'dims'
+      dims.append(mkInput('width', '幅'), '×', mkInput('depth', '奥行'))
+      row.append(b, dims)
+      list.append(row)
+    }
+  }
+  // 置いている途中の種類を、今の一覧に合わせる（消えたらやめる、寸法が変わったら合わせる）
+  const syncPlacing = () => {
+    if (mode.type !== 'placing') return
+    const t = findTemplate(scene().templates, mode.template.kind)
+    if (!t) mode = { type: 'idle' }
+    else if (t !== mode.template) mode = { ...mode, template: t, width: t.width, depth: t.depth }
   }
   const h2 = document.createElement('h2')
   h2.textContent = '選択中'
@@ -262,8 +294,26 @@ export function mountEditor(canvas: Canvas): Editor {
   }
   const rotLeft = mkAction('⟲ 90°', '反時計回りに 90 度（Shift+R）', () => rotateSelection(-1))
   const rotRight = mkAction('⟳ 90°', '時計回りに 90 度（R）', () => rotateSelection(1))
+  const unitLabel = document.createElement('label')
+  unitLabel.className = 'unit-mode'
+  unitLabel.title = '基準の設備（成形機など）を動かす・回す・複製すると、つないだ付帯設備（ユニット）も一緒に動く。外すと選んだ設備だけ'
+  const unitBox = document.createElement('input')
+  unitBox.type = 'checkbox'
+  unitBox.checked = unitMode
+  unitBox.addEventListener('change', () => {
+    unitMode = unitBox.checked
+    try {
+      localStorage.setItem(UNIT_MODE_KEY, unitMode ? 'on' : 'off')
+    } catch {
+      // 覚えておけなくても、開いている間は効く
+    }
+    unitBox.blur()
+    render()
+  })
+  unitLabel.append(unitBox, 'ユニットごと')
   const dup = mkAction('複製', '選択中の設備を写して右隣に置く（余白の分だけ離す。Ctrl+D）', duplicateSelection)
   const del = mkAction('削除', '選択中の設備を消す（Delete）', removeSelection)
+  actions.append(unitLabel)
   // 選択中の設備の名前・寸法・色。値を確定したとき（change）に update のコマンドを 1 回出す
   const props = document.createElement('div')
   props.className = 'props'
@@ -417,6 +467,10 @@ export function mountEditor(canvas: Canvas): Editor {
   }
 
   function render() {
+    if (scene().templates !== builtFor) {
+      buildTemplateList(scene().templates)
+      syncPlacing()
+    }
     // ドラッグ中は、移動のコマンドを仮に当てた結果を見せる（履歴には積まない）
     let shown = scene()
     if (mode.type === 'dragging' && mode.moved) {
@@ -436,8 +490,11 @@ export function mountEditor(canvas: Canvas): Editor {
     const overlaps = findOverlaps(placed ? { ...shown, equipment: [...shown.equipment, placed] } : shown)
     const overlapping = overlappingEquipment(overlaps)
     const inClearance = clearanceEquipment(overlaps)
+    // ユニットごとなら、選んだ基準の設備のユニットの付帯設備を、一緒に動くものとして薄く示す
+    const units = unitMode ? unitsOf(shown) : null
+    const members = new Set(units ? selected.flatMap((id) => units.get(id) ?? []).filter((id) => !sel.has(id)) : [])
     const cls = (eq: Equipment) =>
-      `${sel.has(eq.id) ? ' selected' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}` +
+      `${sel.has(eq.id) ? ' selected' : ''}${members.has(eq.id) ? ' unit-member' : ''}${outside.has(eq.id) ? ' outside' : ''}${overlapping.has(eq.id) ? ' overlap' : ''}` +
       `${inClearance.has(eq.id) ? ' in-clearance' : ''}`
     const all = placed ? [...shown.equipment, placed] : shown.equipment
     clearanceLayer.replaceChildren(...all.flatMap((eq) => drawClearance(eq, sel.has(eq.id) || eq === placed)))
@@ -655,7 +712,7 @@ export function mountEditor(canvas: Canvas): Editor {
         startClient: { x: e.clientX, y: e.clientY },
         startWorld: at,
         grabId: hit,
-        ids: [...selected],
+        ids: expand([...selected]),
         dx: 0,
         dy: 0,
         moved: false,
@@ -736,7 +793,7 @@ export function mountEditor(canvas: Canvas): Editor {
       startClient: { x: e.clientX, y: e.clientY },
       startWorld: at,
       grabId: hit,
-      ids: [...selected],
+      ids: expand([...selected]),
       dx: 0,
       dy: 0,
       moved: false,

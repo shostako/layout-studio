@@ -4,7 +4,7 @@ import { aiInstructions, buildAiPrompt, summarizeScene } from './aiPrompt'
 import { applyCommand, type Command } from './commands'
 import { createEmptyScene, type Scene } from './scene'
 import { rectSite } from './site'
-import { TEMPLATES, equipmentFromTemplate, findTemplate } from './templates'
+import { INJECTION_PRESET, equipmentFromTemplate, findTemplate } from './templates'
 
 function run(s: Scene, cmd: Command): Scene {
   const r = applyCommand(s, cmd)
@@ -14,7 +14,7 @@ function run(s: Scene, cmd: Command): Scene {
 
 // 成形機 2 台（eq-1 は 90° 回し）、通路 1 本、つなぎ 1 本、敷地 30 m × 20 m
 function sample(): Scene {
-  const t = findTemplate('molding-machine')!
+  const t = findTemplate(INJECTION_PRESET, 'molding-machine')!
   let s = createEmptyScene()
   s = run(s, { type: 'setSite', site: rectSite(0, 0, 30000, 20000) })
   s = run(s, { type: 'add', equipment: equipmentFromTemplate(t, { id: 'eq-1', name: '成形機 1', center: { x: 5000, y: 5000 }, rotation: 90 }) })
@@ -45,7 +45,7 @@ describe('summarizeScene', () => {
     // eq-2 を eq-1 に重なるまで寄せる（本体が重なり、余白にも入る）
     s = run(s, { type: 'move', ids: ['eq-2'], dx: -9000, dy: 0 })
     // 敷地の外へ 1 台
-    const t = findTemplate('weighing-scale')!
+    const t = findTemplate(INJECTION_PRESET, 'weighing-scale')!
     s = run(s, { type: 'add', equipment: equipmentFromTemplate(t, { id: 'eq-3', name: '重量計 1', center: { x: 40000, y: 5000 } }) })
     const notices = summarizeScene(s).notices
     expect(notices.some((x) => x.startsWith('重なり:') && x.includes('eq-1') && x.includes('eq-2'))).toBe(true)
@@ -67,7 +67,7 @@ describe('summarizeScene', () => {
 describe('aiInstructions', () => {
   it('ひな形の種類をすべて載せる', () => {
     const text = aiInstructions()
-    for (const t of TEMPLATES) expect(text).toContain(t.kind)
+    for (const t of INJECTION_PRESET) expect(text).toContain(t.kind)
   })
 
   // 説明に書いた指示の例が、確かめ（planAiCommands）で通ること。書き方と確かめがずれないようにする
