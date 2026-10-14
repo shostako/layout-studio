@@ -61,10 +61,12 @@ const round = (v: number) => Math.round(v)
 type Frame = { anchor: Equipment; side: Side; toward: Side }
 
 // 取り出し側と並べる向きを決める（docs/layout-rules.md「取り出し側」）。渡された向きが基準の設備の向きに合わなければ断る
-// ユニットの中の同じ種類の設備を、つなぎの順（先につないだものから）に並べる。つないでいないものは後ろ（シーンの並び順）
+// ユニットの中の同じ種類の設備を、ユニットの中からのつなぎの順（先につないだものから）に並べる。つないでいないものは後ろ（シーンの並び順）。
+// ユニットの外からのつなぎは数えない（再生はトリミング機などユニットの中の設備から出るつなぎの順に入れるため）
 function byLinkOrder(scene: Scene, anchor: Equipment, members: Equipment[], kind: string): Equipment[] {
+  const inUnit = new Set([anchor.id, ...members.map((m) => m.id)])
   const order = (id: string) => {
-    const i = scene.links.findIndex((l) => l.to === id || (l.from === id && l.to === anchor.id))
+    const i = scene.links.findIndex((l) => (l.to === id && inUnit.has(l.from)) || (l.from === id && l.to === anchor.id))
     return i < 0 ? Infinity : i
   }
   return members.filter((x) => x.kind === kind).sort((a, b) => order(a.id) - order(b.id))
