@@ -425,7 +425,7 @@ export function mountEditor(canvas: Canvas): Editor {
     snapSelect.append(o)
   }
   snapSelect.value = String(snap)
-  snapSelect.title = '設備の外形の左上を、この間隔の点に合わせる（マス目の表示とは別）'
+  snapSelect.title = '置く・動かすとき、設備の外形の左上がこの間隔の倍数の位置に吸い付く。矢印キーで動かす量もこの間隔（なしは 10 mm）。敷地と通路の頂点も同じ。マス目の表示とは別'
   snapSelect.addEventListener('change', () => {
     snap = Number(snapSelect.value)
     snapSelect.blur()
