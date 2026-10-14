@@ -8,7 +8,7 @@ import { aiInstructions, summarizeScene } from '../src/core/aiPrompt'
 import { applyCommand } from '../src/core/commands'
 import { planMetrics } from '../src/core/compare'
 import { findPlan, type LiveAsk, type LiveResponse } from '../src/core/live'
-import { applyPlanCommand, nextPlanIds, type Plan, type PlanSet } from '../src/core/plans'
+import { applyPlanCommand, layoutGroups, nextPlanIds, type Plan, type PlanSet } from '../src/core/plans'
 import type { Scene } from '../src/core/scene'
 import { PLAN_FILE_FORMAT, parsePlanFile, serializePlanSet, serializeScene } from '../src/core/sceneFile'
 
@@ -208,7 +208,8 @@ async function summarize(a: Args, ctx: Context): Promise<ToolResult> {
   return ok(
     json({
       ...where(src),
-      plans: l.file.set.plans.map((q) => ({ id: q.id, name: q.name, equipment: q.scene.equipment.length, active: q.id === l.file.set.active })),
+      plans: l.file.set.plans.map((q) => ({ id: q.id, name: q.name, layout: q.layout?.id ?? null, equipment: q.scene.equipment.length, active: q.id === l.file.set.active })),
+      layouts: layoutGroups(l.file.set).map((g) => ({ id: g.id, description: g.description, plans: g.plans.map((q) => q.id) })),
       plan: { id: p.id, name: p.name },
       metrics: metrics(p.scene),
       scene: summarizeScene(p.scene),

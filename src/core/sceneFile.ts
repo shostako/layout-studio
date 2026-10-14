@@ -5,7 +5,7 @@
 import { applyCommand } from './commands'
 import { DEFAULT_FLOW_SETTINGS, SCENE_VERSION, createEmptyScene, type Scene } from './scene'
 import { INJECTION_PRESET, copyTemplates } from './templates'
-import type { Plan, PlanSet } from './plans'
+import { withLayouts, type Plan, type PlanLayout, type PlanSet } from './plans'
 
 export type ParseResult = { ok: true; scene: Scene } | { ok: false; error: string }
 
@@ -90,7 +90,7 @@ export function sceneFileName(now: Date): string {
 }
 
 // ---- 案の束のファイル ----
-// 案を複数入れたファイルは { format: PLAN_FILE_FORMAT, version, active, plans: [{ id, name, scene }] }。
+// 案を複数入れたファイルは { format: PLAN_FILE_FORMAT, version, active, plans: [{ id, name, scene, layout }] }（layout は後から足した項目で、無ければ並びから振る）。
 // scene はシーンのファイルと同じ形（自分の version を持つ）で、読むときはシーンのファイルと同じ変換と確かめを通す。
 // 束の形を変えるときは PLAN_FILE_VERSION を上げる。
 export const PLAN_FILE_FORMAT = 'layout-studio/plans'
@@ -114,7 +114,7 @@ export function parsePlanFile(text: string, name: string): PlanFileResult {
   const d = data as Record<string, unknown> | null
   if (typeof d !== 'object' || d === null || Array.isArray(d) || d.format !== PLAN_FILE_FORMAT) {
     const r = parseSceneData(data)
-    return r.ok ? { ok: true, plans: [{ id: 'plan-1', name, scene: r.scene }], active: 'plan-1' } : r
+    return r.ok ? { ok: true, ...withLayouts({ plans: [{ id: 'plan-1', name, scene: r.scene }], active: 'plan-1' }) } : r
   }
   const v = d.version
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return { ok: false, error: 'ファイルに版（version）がありません' }
@@ -125,16 +125,19 @@ export function parsePlanFile(text: string, name: string): PlanFileResult {
   for (const [i, p] of (d.plans as unknown[]).entries()) {
     const where = `${i + 1} 番目の案`
     if (typeof p !== 'object' || p === null) return { ok: false, error: `${where}が案の形ではありません` }
-    const { id, name: n, scene } = p as Record<string, unknown>
+    const { id, name: n, scene, layout } = p as Record<string, unknown>
     if (typeof id !== 'string' || !id) return { ok: false, error: `${where}の id がありません` }
     if (plans.some((q) => q.id === id)) return { ok: false, error: `案の id が重複しています: ${id}` }
     if (typeof n !== 'string' || !n.trim()) return { ok: false, error: `${where}の名前がありません` }
     if (plans.some((q) => q.name === n.trim())) return { ok: false, error: `同じ名前の案があります: ${n.trim()}` }
     const r = parseSceneData(scene)
     if (!r.ok) return { ok: false, error: `案「${n.trim()}」: ${r.error}` }
-    plans.push({ id, name: n.trim(), scene: r.scene })
+    // レイアウト（版 1 のファイルに後から足した項目）。形が違えば読み捨てて、並びから振り直す
+    const l = layout as Record<string, unknown> | undefined
+    const ok = typeof l === 'object' && l !== null && typeof l.id === 'string' && /^L\d+$/.test(l.id) && typeof l.signature === 'string'
+    plans.push({ id, name: n.trim(), scene: r.scene, ...(ok ? { layout: { id: l.id, signature: l.signature } as PlanLayout } : {}) })
   }
   // 開いていた案が見つからなければ先頭を開く
   const active = typeof d.active === 'string' && plans.some((p) => p.id === d.active) ? d.active : plans[0]!.id
-  return { ok: true, plans, active }
+  return { ok: true, ...withLayouts({ plans, active }) }
 }

@@ -4,7 +4,7 @@
 import type { Canvas } from './canvas'
 import type { Editor } from './editor'
 import { createHistory, type History } from '../core/history'
-import { activePlan, applyPlanCommand, createPlanSet, nextPlanIds, withActiveScene, type PlanCommand, type PlanSet } from '../core/plans'
+import { activePlan, applyPlanCommand, createPlanSet, layoutChange, layoutGroups, nextPlanIds, withActiveScene, type PlanCommand, type PlanSet } from '../core/plans'
 import { createEmptyScene } from '../core/scene'
 
 export type Plans = {
@@ -52,7 +52,11 @@ export function mountPlans(canvas: Canvas, editor: Editor): Plans {
   }
   const msg = document.createElement('div')
   msg.className = 'hint warn'
-  box.append(list, nameLabel, row, msg)
+  // 基準の設備の並びが、案のレイアウトとして確かめた並びから変わったときに聞く
+  const ask = document.createElement('div')
+  ask.className = 'layout-change'
+  ask.hidden = true
+  box.append(list, nameLabel, row, ask, msg)
   canvas.side.prepend(h, box)
 
   const current = () => withActiveScene(set, editor.scene())
@@ -106,23 +110,77 @@ export function mountPlans(canvas: Canvas, editor: Editor): Plans {
     e.stopPropagation() // 入力中の Delete や矢印キーをキャンバスの操作にしない
   })
 
+  const planButton = (p: PlanSet['plans'][number]) => {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = `plan${p.id === set.active ? ' active' : ''}`
+    b.textContent = p.name
+    b.title = p.id === set.active ? '開いている案' : `案「${p.name}」を開く`
+    b.addEventListener('click', () => {
+      if (p.id !== set.active) run({ type: 'switchPlan', id: p.id })
+    })
+    return b
+  }
+  // 案はレイアウト（基準の設備の並び）ごとにまとめて見せる
   const draw = () => {
+    const s = current()
     list.replaceChildren(
-      ...set.plans.map((p) => {
-        const b = document.createElement('button')
-        b.type = 'button'
-        b.className = `plan${p.id === set.active ? ' active' : ''}`
-        b.textContent = p.name
-        b.title = p.id === set.active ? '開いている案' : `案「${p.name}」を開く`
-        b.addEventListener('click', () => {
-          if (p.id !== set.active) run({ type: 'switchPlan', id: p.id })
-        })
-        return b
+      ...layoutGroups(s).flatMap((g) => {
+        const head = document.createElement('div')
+        head.className = 'layout-head'
+        head.textContent = `${g.id}　${g.description}`
+        head.title = 'レイアウト（基準の設備の並び）。番号の下が、このレイアウトの案'
+        return [head, ...g.plans.map(planButton)]
       }),
     )
     if (document.activeElement !== nameInput) nameInput.value = activePlan(set).name
     delBtn.disabled = set.plans.length <= 1
+    drawAsk()
   }
+
+  // 並びが変わったか。基準の設備が無かった案に並べたときは、ほかの案と共有していなければ黙って今の並びにする
+  let askKey = ''
+  const drawAsk = () => {
+    const s = current()
+    const ch = layoutChange(s)
+    const p = activePlan(s)
+    if (ch && p.layout?.signature === '' && !s.plans.some((q) => q !== p && q.layout?.id === p.layout?.id)) {
+      run({ type: 'confirmLayout', id: p.id })
+      return
+    }
+    const key = ch ? `${p.id}|${ch.from}|${ch.to}|${ch.description}` : ''
+    if (key === askKey) return
+    askKey = key
+    ask.hidden = !ch
+    if (!ch) return ask.replaceChildren()
+    const text = document.createElement('div')
+    text.textContent = `基準の設備の並びが ${ch.from} から変わりました（今: ${ch.description}）。新しいレイアウトにしますか。`
+    const acts = document.createElement('div')
+    acts.className = 'actions'
+    const yes = document.createElement('button')
+    yes.type = 'button'
+    yes.textContent = ch.existing ? `${ch.to} に移す` : `新しいレイアウト ${ch.to} にする`
+    yes.title = ch.existing ? `同じ並びのレイアウト ${ch.to} にこの案を移す` : 'この案を新しいレイアウトにする（ほかの案は今のレイアウトのまま）'
+    yes.addEventListener('click', () => run({ type: 'setPlanLayout', id: p.id, layout: ch.to }))
+    const no = document.createElement('button')
+    no.type = 'button'
+    no.textContent = `${ch.from} のままにする`
+    no.title = `この案を ${ch.from} のままにし、今の並びを ${ch.from} の並びとして覚える`
+    no.addEventListener('click', () => run({ type: 'confirmLayout', id: p.id }))
+    acts.append(yes, no)
+    ask.replaceChildren(text, acts)
+  }
+  // 開いている案の並びが変わったら、まとめの見出し（説明）も書き直す
+  let groupsKey = ''
+  editor.onRender(() => {
+    const key = layoutGroups(current())
+      .map((g) => `${g.id}:${g.description}`)
+      .join('|')
+    if (key !== groupsKey) {
+      groupsKey = key
+      draw()
+    } else drawAsk()
+  })
   draw()
 
   return {
