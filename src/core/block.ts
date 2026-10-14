@@ -14,7 +14,7 @@ export type BlockOptions = {
   kind?: string // 基準の設備の種類。省くと、付帯設備の決まりがある最初の基準の種類
   count: number // 台数（1〜100）
   columns?: number // 列の数（省くと 1）
-  orientation?: 'horizontal' | 'vertical' // 基準の設備の向き。横＝長い辺が x（省くと横）
+  orientation?: 'horizontal' | 'vertical' // 基準の設備の向き。横＝回転 0（ひな形の幅が x。成形機なら長い辺が左右）、縦＝回転 90（省くと横）
   side?: Side // 取り出し側（attach.ts と同じ）
   toward?: Side // 後工程を並べる向き
   origin?: Point // まとまりの本体の左上（省くと、置いてある設備の右か、敷地の左上）
@@ -67,9 +67,8 @@ export function placeBlock(scene: Scene, o: BlockOptions): BlockResult {
   const t = anchorTemplate(scene, o.kind)
   if (typeof t === 'string') return { ok: false, error: t }
   const horizontal = (o.orientation ?? 'horizontal') === 'horizontal'
-  // 横＝長い辺が x。ひな形が縦長（幅 < 奥行）なら、回して横にする
-  const wide = t.width >= t.depth
-  const rotation: Rotation = horizontal === wide ? 0 : 90
+  // 横＝回転 0（ひな形の幅が x）、縦＝回転 90。レイアウトの並びの横・縦（回転で決める）と同じ
+  const rotation: Rotation = horizontal ? 0 : 90
 
   // 1 台ぶんを原点に作って、本体の外接の長方形といちばん広い余白を測る
   const probe = oneUnit(createEmptyScene(scene.templates), t, { x: 0, y: 0 }, rotation, o)

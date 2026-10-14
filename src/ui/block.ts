@@ -36,8 +36,8 @@ export function mountBlock(canvas: Canvas, editor: Editor): void {
   const count = num(7, MAX_BLOCK)
   const columns = num(1, MAX_BLOCK)
   const orientation = sel([
-    ['horizontal', '横（長い辺が左右）'],
-    ['vertical', '縦（長い辺が上下）'],
+    ['horizontal', '横（回転 0。成形機なら長い辺が左右）'],
+    ['vertical', '縦（回転 90）'],
   ])
   const sides: [string, string][] = [
     ['', '自動'],

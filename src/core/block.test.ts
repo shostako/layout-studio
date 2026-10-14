@@ -55,11 +55,11 @@ describe('placeBlock（並べる）', () => {
     expect(describeLayout(placed(createEmptyScene(), { count: 6, columns: 4, origin: { x: 0, y: 0 } }))).toBe('成形機 6 台（横 4 列: 2・2・1・1）')
   })
 
-  it('縦長のひな形も、横を選べば長い辺を x に回して並べる', () => {
+  it('横・縦は回転で決める（縦長のひな形も横なら回転 0）。重なりなく並ぶ', () => {
     const zero = { top: 500, right: 500, bottom: 500, left: 500 }
     const s = createEmptyScene([{ kind: 'press', name: 'プレス機', width: 2000, depth: 6000, color: '#888888', clearance: zero, role: 'anchor' }])
     const h = placed(s, { count: 3, orientation: 'horizontal', origin: { x: 0, y: 0 } })
-    for (const e of h.equipment) expect(e.rotation).toBe(90)
+    for (const e of h.equipment) expect(e.rotation).toBe(0)
     expect(describeLayout(h)).toBe('プレス機 3 台（横 1 列）')
     expect(findOverlaps(h)).toEqual([])
   })

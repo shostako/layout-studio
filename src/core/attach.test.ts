@@ -131,6 +131,24 @@ describe('付け直しでのつなぎ', () => {
   })
 })
 
+describe('付け直しでの余った設備', () => {
+  it('余った設備を回る遠回りのつなぎがあっても輪にならない（ユニットの中の決まりと違うつなぎは外す）', () => {
+    let s = attached(machine())
+    const id = (n: string) => s.equipment.find((e) => e.name === n)!.id
+    const [robot, deg, trim] = [id('取出機 1'), id('型抜き機 1'), id('トリミング機 1')]
+    const extra = { ...s.equipment.find((e) => e.id === trim)!, id: 'x1', name: '余り', x: 20000, y: 20000 }
+    s = run(s, { type: 'add', equipment: extra })
+    s = run(s, { type: 'unlink', links: [{ from: deg, to: trim }] })
+    s = run(s, { type: 'link', links: [{ from: robot, to: trim }, { from: trim, to: 'x1' }, { from: 'x1', to: deg }] })
+    const r = attachUnit(s, 'eq-1')
+    expect(r.ok).toBe(true)
+    const after = run(s, r.ok ? r.command : null)
+    expect(where(after)['余り']).toEqual([20000, 20000, 0])
+    expect(after.links.some((l) => l.from === 'x1' || l.to === 'x1')).toBe(false)
+    expect(after.links.some((l) => l.from === deg && l.to === trim)).toBe(true)
+  })
+})
+
 describe('付け直しでのストッカーと予備', () => {
   it('ストッカーが 2 台あれば、つなぎの順で先のものを主の位置に置く', () => {
     let s = attached(machine())

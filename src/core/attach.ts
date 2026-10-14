@@ -228,8 +228,8 @@ export function attachUnit(scene: Scene, anchorId: string, o: AttachOptions = {}
 
   // つなぎ: 基準 → 載る → 列の順、列の最後 → 溜める設備それぞれ。もうあるものは足さない
   // つなぎ: 基準 → 載る → 列の順、列の最後 → 溜める設備それぞれ。逆向き（取出機 → 成形機）につないであれば、そのまま使う。
-  // 使う設備どうしの、決まりと違うつなぎ（順が入れ替わったものなど）は外してから足す（足すと輪になって断られるため）。
-  // 使わない設備（余った分）やユニットの外とのつなぎは触らない
+  // ユニットの中（基準の設備・付帯設備・余った分）どうしの、決まりと違うつなぎは外してから足す（順の入れ替わり・余った設備を回る遠回りが
+  // あると、足したときに輪になって断られるため）。余った設備は動かさず、ユニットの外とのつなぎも触らない
   const desired: { from: string; to: string }[] = []
   let prev = anchor.id
   if (robot) {
@@ -243,7 +243,7 @@ export function attachUnit(scene: Scene, anchorId: string, o: AttachOptions = {}
   }
   for (const b of buffers) desired.push({ from: prev, to: b!.id })
   const same = (a: { from: string; to: string }, b: { from: string; to: string }) => a.from === b.from && a.to === b.to
-  const usedIds = new Set([anchor.id, ...[robot, ...chain, ...buffers].map((e) => e!.id)])
+  const usedIds = new Set([anchor.id, ...members.map((e) => e.id), ...[robot, ...chain, ...buffers].map((e) => e!.id)])
   const stale = scene.links.filter((l) => usedIds.has(l.from) && usedIds.has(l.to) && !desired.some((d) => same(d, l)))
   const links = desired.filter((d) => !scene.links.some((l) => same(l, d)))
   if (stale.length) commands.push({ type: 'unlink', links: stale })

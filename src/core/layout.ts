@@ -17,12 +17,10 @@ export const COLUMN_GAP = 1000
 
 type Column = { kind: string; horizontal: boolean; items: Equipment[] } // items は積む向きの小さい順
 
-// 横（長い辺が x）か。寸法を変えただけで変わらないよう、置いた設備の寸法ではなく、回転と種類のひな形の縦横で決める
-function horizontalOf(scene: Scene, e: Equipment): boolean {
-  const t = findTemplate(scene.templates, e.kind)
-  const wide = t ? t.width >= t.depth : e.width >= e.depth
-  const straight = e.rotation === 0 || e.rotation === 180
-  return straight === wide
+// 横か。回転だけで決める（0・180 を横、90・270 を縦）。置いた設備やひな形の寸法を変えても変わらない。
+// 成形機のようにひな形が横長なら、横は長い辺が x の向き
+function horizontalOf(e: Equipment): boolean {
+  return e.rotation === 0 || e.rotation === 180
 }
 
 function columnsOf(items: Equipment[], kind: string, horizontal: boolean): Column[] {
@@ -45,7 +43,7 @@ function allColumns(scene: Scene): Column[] {
   const kinds = [...new Set(anchors.map((e) => e.kind))].sort()
   return kinds.flatMap((kind) => {
     const list = anchors.filter((e) => e.kind === kind)
-    const isH = (e: Equipment) => horizontalOf(scene, e)
+    const isH = horizontalOf
     return [...columnsOf(list.filter(isH), kind, true), ...columnsOf(list.filter((e) => !isH(e)), kind, false)]
   })
 }

@@ -63,9 +63,11 @@ describe('layoutSignature と describeLayout', () => {
     expect(layoutSignature(scene([...row(3, 0), ...v(18000)]))).toBe(layoutSignature(right))
   })
 
-  it('置いた設備の寸法を変えても横・縦は変わらない（回転とひな形で決める）', () => {
+  it('置いた設備やひな形の寸法を変えても横・縦は変わらない（回転で決める）', () => {
     const base = row(2, 0)
     expect(layoutSignature(scene(base.map((e) => ({ ...e, width: 2000, depth: 3000 }))))).toBe(layoutSignature(scene(base)))
+    const tall = createEmptyScene(createEmptyScene().templates.map((t) => (t.kind === 'molding-machine' ? { ...t, width: 2000, depth: 3000 } : t)))
+    expect(layoutSignature({ ...tall, equipment: base })).toBe(layoutSignature(scene(base)))
   })
 
   it('寸法を変えても列の分かれ方は変わらない', () => {
