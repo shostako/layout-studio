@@ -70,6 +70,8 @@ export type Canvas = {
   touchCount(): number
   // 2 本目の指が触れて、拡大縮小と移動を始めたときに呼ぶ（editor が 1 本指の操作をやめる）
   onPinch(listener: () => void): void
+  // マス目を描くたびに、今引いている細線の間隔（mm）を知らせる（自動のとき道具バーに出すため）
+  onGridStep(listener: (minor: number) => void): void
 }
 
 export function mountCanvas(root: HTMLElement): Canvas {
@@ -111,6 +113,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
   const homeRect = (): Rect => homeSource() ?? DEFAULT_HOME
   let view: Viewport = fitRect(homeRect(), size())
   let cell = 0
+  const gridListeners: ((minor: number) => void)[] = []
   // 使う人が一度も動かしていない間は、窓の大きさが決まるたびに最初の範囲へ合わせ直す
   let touched = false
   let cursor: Point | null = null
@@ -147,6 +150,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
     status.textContent =
       `${pos}　｜　マス目 ${gridText(cell, step, fixed ? fixed.thinned : null)}` +
       `　｜　1 m = ${Number((view.scale * 1000).toPrecision(3))} px`
+    for (const f of gridListeners) f(step.minor)
   }
 
   const center = (): Point => {
@@ -325,6 +329,7 @@ export function mountCanvas(root: HTMLElement): Canvas {
     },
     touchCount: () => touches.size,
     onPinch: (f) => pinchListeners.push(f),
+    onGridStep: (f) => gridListeners.push(f),
     setHomeSource: (source) => {
       homeSource = source
     },

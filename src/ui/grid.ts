@@ -19,7 +19,7 @@ export function mountGrid(canvas: Canvas, editor: Editor): void {
   const label = document.createElement('label')
   label.className = 'grid-label'
   label.textContent = 'マス目 '
-  label.title = 'マス目 1 つの大きさ。自動は拡大縮小に合わせて変わる。大きさを決めると、縮小して細かくなりすぎたときだけ 10 マスごとに間引いて引く'
+  label.title = 'マス目 1 つの大きさ。自動は拡大縮小に合わせて変わり、かっこの中が今の大きさ。大きさを決めると、縮小して細かくなりすぎたときだけ 10 マスごとに間引いて引く'
   const select = document.createElement('select')
   for (const c of GRID_CELLS) select.append(new Option(c === 0 ? '自動' : formatLength(c), String(c)))
   label.append(select)
@@ -67,5 +67,11 @@ export function mountGrid(canvas: Canvas, editor: Editor): void {
   const snap = canvas.toolbar.querySelector('.snap-label')
   if (snap) snap.after(label, reset, save)
   else canvas.toolbar.append(label, reset, save)
+  // 自動のときは、今の細かさを選択の中に出す（例: 「自動（500 mm）」）。下の段にも出ているが、目に入りにくい
+  const autoOption = select.options[0]!
+  canvas.onGridStep((minor) => {
+    const text = `自動（${formatLength(minor)}）`
+    if (autoOption.text !== text) autoOption.text = text
+  })
   apply(loadDefault())
 }
