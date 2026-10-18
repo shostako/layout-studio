@@ -36,6 +36,8 @@ export const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Recor
     typeof d.flow === 'object' && d.flow !== null && !Array.isArray(d.flow) ? { ...d, flow: { ...d.flow, agvCount: 1 } } : d,
   // 版 9 で設備の種類の一覧（templates）を足した。それまでは射出成形の 6 種がコードに固定だったので、その組で読む
   8: (d) => ({ ...d, templates: copyTemplates(INJECTION_PRESET) }),
+  // 版 10 で置けない所（zones）を足した。版 9 には無いので空
+  9: (d) => ({ ...d, zones: [] }),
 }
 
 export function serializeScene(scene: Scene): string {

@@ -5,6 +5,7 @@ import { backgroundRect } from './background'
 import { aislePieces } from './overlap'
 import { equipmentBounds, footprint, type Scene } from './scene'
 import type { Point, Rect } from './viewport'
+import { zoneRect } from './zone'
 
 export type Site = { points: Point[] }
 
@@ -164,6 +165,7 @@ export function sceneExtent(scene: Scene): Rect | null {
   const rects: Rect[] = []
   if (scene.background) rects.push(backgroundRect(scene.background))
   if (scene.site) rects.push(siteBounds(scene.site))
+  for (const z of scene.zones) rects.push(zoneRect(z))
   const eq = equipmentBounds(scene.equipment)
   if (eq) rects.push(eq)
   // 通路は描いた形（角の尖り＝マイター継ぎを含む）の頂点で囲む。頂点を幅の半分だけ広げるだけでは、鋭い角の先が外に出る

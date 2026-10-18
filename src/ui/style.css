@@ -426,6 +426,52 @@ body {
 .site-vertex.closing {
   fill: #2e7d32;
 }
+.zone {
+  fill: rgba(96, 96, 96, 0.35);
+  stroke: #555;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.zone.drawing {
+  fill: rgba(96, 96, 96, 0.2);
+  pointer-events: none;
+}
+.zone-label {
+  fill: var(--fg);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.mono .zone {
+  fill: rgba(0, 0, 0, 0.12);
+  stroke: #000;
+}
+.zone-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 3px 0;
+}
+.zone-row input[type='number'] {
+  width: 5.5em;
+  min-width: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.zone-row input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+}
+.zone-item {
+  border-top: 1px solid var(--line);
+  padding: 4px 0;
+}
+.zone-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
 .site-steps,
 .site-vertices {
   margin: 4px 0;

@@ -55,6 +55,10 @@ const REFUSED: Record<string, string> = {
   add: '設備を置くときは place を使ってください',
   setBackground: '背景の図面は画面で扱います。AI からは変えません',
   calibrateBackground: '背景の図面は画面で扱います。AI からは変えません',
+  addZone: '置けない所は図面を見て画面で描きます。AI からは変えません',
+  updateZone: '置けない所は図面を見て画面で描きます。AI からは変えません',
+  removeZone: '置けない所は図面を見て画面で描きます。AI からは変えません',
+  moveZone: '置けない所は図面を見て画面で描きます。AI からは変えません',
   moveBackground: '背景の図面は画面で扱います。AI からは変えません',
   loadScene: 'シーンをまるごと差し替える操作は AI からは使えません',
   batch: 'まとめ（batch）は使えません。commands に順に並べてください',
@@ -397,6 +401,11 @@ export function describeCommand(scene: Scene, cmd: Command): string {
     case 'calibrateBackground':
     case 'moveBackground':
       return '背景の図面を変える'
+    case 'addZone':
+    case 'updateZone':
+    case 'removeZone':
+    case 'moveZone':
+      return '置けない所を変える'
     case 'setTemplates':
       return describeTemplates(scene.templates, cmd.templates)
     case 'loadScene':
