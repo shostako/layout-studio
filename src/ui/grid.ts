@@ -60,9 +60,20 @@ export function mountGrid(canvas: Canvas, editor: Editor): void {
     }
   })
   // 覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を全部消して、アプリの初めの値で開き直す。
-  // 図面と案（自動保存）は消さない。開き直す前の自動保存は pagehide で書き出される
-  const factory = mkButton('初期設定', 'このブラウザに覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を、アプリの初めの値に戻す。図面と案は消えない', () => {
-    if (!window.confirm('覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を初めの値に戻して、開き直します。図面と案は消えません。')) return
+  // 図面と案（自動保存）は消さない。開き直す前の自動保存は pagehide で書き出される。
+  // 確かめは、続けてもう一度押すこと（確かめの窓は、埋め込まれた画面では出ずに断られることがあるため）
+  let armed: number | undefined
+  const factory = mkButton('初期設定', 'このブラウザに覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を、アプリの初めの値に戻す。続けてもう一度押すと戻る。図面と案は消えない', () => {
+    if (armed === undefined) {
+      factory.textContent = 'もう一度押すと戻す'
+      armed = window.setTimeout(() => {
+        armed = undefined
+        factory.textContent = '初期設定'
+      }, 3000)
+      return
+    }
+    window.clearTimeout(armed)
+    armed = undefined
     try {
       const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? '')
       for (const k of prefKeys(keys)) localStorage.removeItem(k)
