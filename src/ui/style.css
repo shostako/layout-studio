@@ -352,7 +352,15 @@ body {
   align-items: center;
   margin: 6px 0;
 }
-.calibrate-form input {
+.pdf-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 6px 0;
+}
+.calibrate-form input,
+.pdf-form input {
   width: 6em;
   font: inherit;
   font-variant-numeric: tabular-nums;
@@ -376,7 +384,12 @@ body {
 .pick-line {
   stroke-dasharray: 6 4;
 }
-.calibrate-form[hidden] {
+.pdf-form input {
+  width: 4.5em;
+}
+.calibrate-form[hidden],
+.pdf-form[hidden],
+.pdf-form span[hidden] {
   display: none;
 }
 .toolbar .file-group {
