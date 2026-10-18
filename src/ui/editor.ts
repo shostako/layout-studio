@@ -566,7 +566,7 @@ export function mountEditor(canvas: Canvas): Editor {
       for (const [k, v] of Object.entries({ x: q.x, y: q.y, width: q.width, height: q.height })) r.setAttribute(k, String(v))
       return r
     }
-    if (o.kind === 'equipment') return [rect(o.region)]
+    if (o.kind === 'equipment' || o.kind === 'zone') return [rect(o.region)]
     if (o.kind === 'clearance') return o.regions.map(rect)
     return o.regions.map((poly) => {
       const p = document.createElementNS(SVG_NS, 'polygon')
@@ -605,9 +605,11 @@ export function mountEditor(canvas: Canvas): Editor {
     for (const o of overlaps) {
       if (o.kind === 'equipment' && (o.a === id || o.b === id)) out.push(equipmentName(s, o.a === id ? o.b : o.a))
       if (o.kind === 'aisle' && o.equipment === id) out.push(s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle)
+      if (o.kind === 'zone' && o.equipment === id) out.push(zoneName(s, o.zone))
     }
     return out
   }
+  const zoneName = (s: Scene, id: string) => s.zones.find((z) => z.id === id)?.name ?? id
   const equipmentName = (s: Scene, id: string) =>
     id === '' && mode.type === 'placing' ? `置く${mode.template.name}` : (s.equipment.find((e) => e.id === id)?.name ?? id)
 
@@ -616,9 +618,10 @@ export function mountEditor(canvas: Canvas): Editor {
   function renderOverlapList(s: Scene, overlaps: readonly Overlap[]) {
     const nEq = overlaps.filter((o) => o.kind === 'equipment').length
     const nAisle = overlaps.filter((o) => o.kind === 'aisle').length
-    const nClear = overlaps.length - nEq - nAisle
+    const nZone = overlaps.filter((o) => o.kind === 'zone' || o.kind === 'zoneAisle').length
+    const nClear = overlaps.length - nEq - nAisle - nZone
     overlapInfo.textContent = overlaps.length
-      ? [nEq ? `設備どうし ${nEq} 件` : '', nAisle ? `設備と通路 ${nAisle} 件` : '', nClear ? `余白への入り込み ${nClear} 件` : '']
+      ? [nEq ? `設備どうし ${nEq} 件` : '', nAisle ? `設備と通路 ${nAisle} 件` : '', nZone ? `置けない所 ${nZone} 件` : '', nClear ? `余白への入り込み ${nClear} 件` : '']
           .filter(Boolean)
           .join('、')
       : 'なし'
@@ -626,15 +629,19 @@ export function mountEditor(canvas: Canvas): Editor {
     overlapList.replaceChildren(
       ...overlaps.slice(0, OVERLAP_ROWS).map((o) => {
         const li = document.createElement('li')
-        const ids = o.kind === 'equipment' ? [o.a, o.b] : o.kind === 'clearance' ? [o.equipment, o.owner] : [o.equipment]
+        const ids = o.kind === 'equipment' ? [o.a, o.b] : o.kind === 'clearance' ? [o.equipment, o.owner] : o.kind === 'zoneAisle' ? [] : [o.equipment]
         if (o.kind === 'clearance') li.className = 'clearance'
         li.textContent =
           o.kind === 'equipment'
             ? `${equipmentName(s, o.a)} と ${equipmentName(s, o.b)}`
             : o.kind === 'clearance'
               ? `${equipmentName(s, o.equipment)} が ${equipmentName(s, o.owner)} の余白に`
-              : `${equipmentName(s, o.equipment)} と ${s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle}`
-        li.title = 'クリックでこの設備を選ぶ'
+              : o.kind === 'zone'
+                ? `${equipmentName(s, o.equipment)} が ${zoneName(s, o.zone)} に`
+                : o.kind === 'zoneAisle'
+                  ? `${s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle} が ${zoneName(s, o.zone)} に`
+                  : `${equipmentName(s, o.equipment)} と ${s.aisles.find((a) => a.id === o.aisle)?.name ?? o.aisle}`
+        if (ids.length) li.title = 'クリックでこの設備を選ぶ'
         li.addEventListener('click', () => {
           const live = ids.filter((id) => scene().equipment.some((e) => e.id === id))
           if (live.length && mode.type === 'idle') {

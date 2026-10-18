@@ -13,6 +13,7 @@ import { mountLive } from './ui/live'
 import { mountPlans } from './ui/plans'
 import { mountPlayback } from './ui/playback'
 import { mountSite } from './ui/site'
+import { mountZones } from './ui/zone'
 import { mountStorage } from './ui/storage'
 import { sceneExtent } from './core/site'
 import { mountExportImage } from './ui/exportImage'
@@ -33,6 +34,7 @@ if (app) {
   mountAttach(canvas, editor)
   mountBackground(canvas, editor)
   mountSite(canvas, editor)
+  mountZones(canvas, editor)
   // つなぎは通路より上に描くので、矢印のクリックを通路より先に受ける
   mountFlow(canvas, editor)
   mountAisles(canvas, editor)

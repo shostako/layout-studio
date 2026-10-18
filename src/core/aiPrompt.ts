@@ -17,6 +17,7 @@ const r = (v: number) => Math.round(v)
 export type SceneSummary = {
   unit: 'mm'
   site: { points: { x: number; y: number }[]; bounds: Box; areaM2: number } | null
+  zones: { id: string; name: string; bounds: Box }[] // 置けない所（防火壁・柱など）
   equipment: {
     id: string
     kind: string
@@ -45,10 +46,13 @@ const box = (x: number, y: number, width: number, height: number): Box => ({ lef
 export function summarizeScene(scene: Scene): SceneSummary {
   const name = (id: string) => scene.equipment.find((e) => e.id === id)?.name ?? id
   const aisleName = (id: string) => scene.aisles.find((a) => a.id === id)?.name ?? id
+  const zoneName = (id: string) => scene.zones.find((z) => z.id === id)?.name ?? id
   const notices: string[] = []
   for (const o of findOverlaps(scene)) {
     if (o.kind === 'equipment') notices.push(`重なり: ${name(o.a)}（${o.a}）と ${name(o.b)}（${o.b}）の本体`)
     else if (o.kind === 'aisle') notices.push(`重なり: ${name(o.equipment)}（${o.equipment}）と通路 ${aisleName(o.aisle)}（${o.aisle}）`)
+    else if (o.kind === 'zone') notices.push(`置けない所: ${name(o.equipment)}（${o.equipment}）の本体が ${zoneName(o.zone)}（${o.zone}）に入っている`)
+    else if (o.kind === 'zoneAisle') notices.push(`置けない所: 通路 ${aisleName(o.aisle)}（${o.aisle}）が ${zoneName(o.zone)}（${o.zone}）に入っている`)
     else notices.push(`余白: ${name(o.equipment)}（${o.equipment}）の本体が ${name(o.owner)}（${o.owner}）の保守用の余白に入っている`)
   }
   for (const id of equipmentOutsideSite(scene)) notices.push(`はみ出し: ${name(id)}（${id}）が敷地の外形の外に出ている`)
@@ -61,6 +65,7 @@ export function summarizeScene(scene: Scene): SceneSummary {
           return { points: site.points.map((p) => ({ x: r(p.x), y: r(p.y) })), bounds: box(b.x, b.y, b.width, b.height), areaM2: Math.round(siteArea(site) / 1e4) / 100 }
         })()
       : null,
+    zones: scene.zones.map((z) => ({ id: z.id, name: z.name, bounds: box(z.x, z.y, z.width, z.height) })),
     equipment: scene.equipment.map((e) => {
       const f = footprint(e)
       return {
@@ -185,7 +190,7 @@ export function aiInstructions(templates: readonly EquipmentTemplate[] = INJECTI
   設備の種類（ひな形）の一覧をまるごと差し替える。今の一覧（要約の templates）を全部写し、足す・変える・消す・並べ替える（写し忘れた種類は消える）。並びは工程の順。
   kind は英小文字・数字・- 。省ける項目: role（anchor＝基準、mounted＝載る（mountsOn に載り先の kind）、buffer＝溜める（満杯で AGV を呼ぶ））。
   置いてある設備の種類は消せない。一覧を変えても置いた設備の寸法は変わらない（update で変える）。
-- 使えないもの: 背景の図面の操作、シーンの差し替え、add（place を使う）、batch。
+- 使えないもの: 背景の図面の操作、置けない所（zones）の操作、シーンの差し替え、add（place を使う）、batch。
 
 ## 設備の種類（kind）と、ひな形の寸法・余白（mm、架空の目安）
 並びは工程の順。役割: 基準＝レイアウトの骨組み、載る＝別の種類の上に重ねて置く、溜める＝満杯で AGV を呼ぶ（流れの再生のストッカー）。
@@ -194,6 +199,7 @@ ${kinds}
 ## 配置のこつ
 - 本体どうし、本体と通路の帯（中心線から幅の半分ずつ）を重ねない。他の設備の本体を余白に入れない（載る設備を、つないだ載り先に重ねるのはかまわない${injection ? '。付帯設備の決まりどおりの位置は例外で、下のとおり' : ''}）。
 ${injection ? INJECTION_TIPS : ''}- 敷地の外形があれば、本体をその内に収める${injection ? '（ただし付帯設備の決まりどおりの位置は例外で、はみ出してもそのまま置いて知らせる）' : ''}。
+- 置けない所（要約の zones。防火壁・柱・キュービクルなど）には、設備の本体も通路の帯も入れない（余白は入ってよい）。
 - 並べるときは bounds と余白から間隔を計算し、座標は整数の mm にする。`
 }
 

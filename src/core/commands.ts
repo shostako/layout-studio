@@ -8,6 +8,7 @@ import { checkSite, type Site } from './site'
 import { DEFAULT_FLOW_SETTINGS, FLOW_LIMITS, NO_CLEARANCE, SCENE_VERSION, createEmptyScene, duplicateName, footprint, type Clearance, type Equipment, type FlowSettings, type Rotation, type Scene } from './scene'
 import { INJECTION_PRESET, checkTemplates, normalizeTemplates, type EquipmentTemplate } from './templates'
 import type { Point } from './viewport'
+import { checkZone, type Zone } from './zone'
 
 export type Command =
   | { type: 'add'; equipment: Equipment } // 設備を置く。id は呼ぶ側が決める（nextEquipmentId）
@@ -26,6 +27,10 @@ export type Command =
   | { type: 'removeAisle'; ids: string[] } // 通路を消す
   | { type: 'moveAisle'; ids: string[]; dx: number; dy: number } // 通路を中心線ごとずらす（mm）
   | { type: 'setAislePoints'; id: string; points: Point[] } // 通路の中心線の頂点を差し替える（頂点を動かす・足す・消す）。周回かどうかは変えない
+  | { type: 'addZone'; zone: Zone } // 置けない所を足す。id は呼ぶ側が決める（nextZoneId）
+  | { type: 'updateZone'; ids: string[]; changes: ZoneChanges } // 置けない所の名前・位置・大きさを変える
+  | { type: 'removeZone'; ids: string[] } // 置けない所を消す
+  | { type: 'moveZone'; ids: string[]; dx: number; dy: number } // 置けない所をずらす（mm）
   | { type: 'link'; links: Link[] } // 工程のつなぎを足す（from → to）。1 本でも断られたら、どれも足さない
   | { type: 'unlink'; links: Link[] } // 工程のつなぎを外す
   | { type: 'setFlow'; changes: Partial<FlowSettings> } // 流れの再生の数値（サイクル・ストッカーの容量・AGV の速さ・入れ替えの時間）を変える。書いたものだけ変える
@@ -36,6 +41,9 @@ export type Command =
 // update で変えられる項目。書いたものだけ変える
 // clearance は書いた辺だけ変える
 export type EquipmentChanges = { name?: string; width?: number; depth?: number; color?: string; clearance?: Partial<Clearance> }
+
+// updateZone で変えられる項目。書いたものだけ変える
+export type ZoneChanges = { name?: string; x?: number; y?: number; width?: number; height?: number }
 
 // updateAisle で変えられる項目。書いたものだけ変える
 export type AisleChanges = { name?: string; width?: number; oneWay?: boolean }
@@ -76,6 +84,14 @@ export function applyCommand(scene: Scene, cmd: Command): CommandResult {
       return moveAisle(scene, cmd.ids, cmd.dx, cmd.dy)
     case 'setAislePoints':
       return setAislePoints(scene, cmd.id, cmd.points)
+    case 'addZone':
+      return addZone(scene, cmd.zone)
+    case 'updateZone':
+      return updateZone(scene, cmd.ids, cmd.changes)
+    case 'removeZone':
+      return removeZone(scene, cmd.ids)
+    case 'moveZone':
+      return moveZone(scene, cmd.ids, cmd.dx, cmd.dy)
     case 'link':
       return link(scene, cmd.links)
     case 'unlink':
@@ -348,6 +364,55 @@ function setAislePoints(scene: Scene, id: string, points: Point[]): CommandResul
   return { ok: true, scene: { ...scene, aisles: scene.aisles.map((a) => (a.id === id ? next : a)) } }
 }
 
+function addZone(scene: Scene, z: Zone): CommandResult {
+  const bad = checkZone(z)
+  if (bad) return fail(bad)
+  if (scene.zones.some((x) => x.id === z.id)) return fail(`置けない所の id が重複しています: ${z.id}`)
+  const zone: Zone = { id: z.id, name: z.name.trim(), x: z.x, y: z.y, width: z.width, height: z.height }
+  return { ok: true, scene: { ...scene, zones: [...scene.zones, zone] } }
+}
+
+function checkZoneIds(scene: Scene, ids: string[]): string | null {
+  if (!Array.isArray(ids) || ids.length === 0) return '対象の置けない所がありません'
+  if (new Set(ids).size !== ids.length) return '対象の置けない所が重複しています'
+  const missing = ids.filter((id) => !scene.zones.some((z) => z.id === id))
+  if (missing.length > 0) return `置けない所が見つかりません: ${missing.join(', ')}`
+  return null
+}
+
+function updateZone(scene: Scene, ids: string[], changes: ZoneChanges): CommandResult {
+  const bad = checkZoneIds(scene, ids)
+  if (bad) return fail(bad)
+  if (typeof changes !== 'object' || changes === null) return fail('変える項目がありません')
+  const keys = (['name', 'x', 'y', 'width', 'height'] as const).filter((k) => changes[k] !== undefined)
+  if (keys.length === 0) return fail('変える項目がありません')
+  const set: ZoneChanges = {}
+  for (const k of keys) (set as Record<string, unknown>)[k] = k === 'name' && typeof changes.name === 'string' ? changes.name.trim() : changes[k]
+  const targets = new Set(ids)
+  const next = scene.zones.map((z) => (targets.has(z.id) ? { ...z, ...set } : z))
+  for (const z of next) {
+    if (!targets.has(z.id)) continue
+    const badZ = checkZone(z)
+    if (badZ) return fail(badZ)
+  }
+  return { ok: true, scene: { ...scene, zones: next } }
+}
+
+function removeZone(scene: Scene, ids: string[]): CommandResult {
+  const bad = checkZoneIds(scene, ids)
+  if (bad) return fail(bad)
+  const targets = new Set(ids)
+  return { ok: true, scene: { ...scene, zones: scene.zones.filter((z) => !targets.has(z.id)) } }
+}
+
+function moveZone(scene: Scene, ids: string[], dx: number, dy: number): CommandResult {
+  const bad = checkZoneIds(scene, ids)
+  if (bad) return fail(bad)
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return fail('移動量が数ではありません')
+  const targets = new Set(ids)
+  return { ok: true, scene: { ...scene, zones: scene.zones.map((z) => (targets.has(z.id) ? { ...z, x: z.x + dx, y: z.y + dy } : z)) } }
+}
+
 function link(scene: Scene, links: Link[]): CommandResult {
   if (!Array.isArray(links) || links.length === 0) return fail('つなぎがありません')
   let next = scene
@@ -435,6 +500,15 @@ function loadScene(next: Scene): CommandResult {
   if (next.site !== null && next.site !== undefined) {
     r = setSite(r.scene, next.site)
     if (!r.ok) return r
+  }
+  // 置けない所を書かなければ無し（AI が書かずにシーンを作れるように）
+  if (next.zones !== undefined) {
+    if (!Array.isArray(next.zones)) return fail('置けない所の一覧（zones）の形ではありません')
+    for (const [i, z] of next.zones.entries()) {
+      if (typeof z !== 'object' || z === null) return fail(`${i + 1} 番目の置けない所が置けない所の形ではありません`)
+      r = addZone(r.scene, z)
+      if (!r.ok) return r
+    }
   }
   for (const [i, eq] of next.equipment.entries()) {
     if (typeof eq !== 'object' || eq === null) return fail(`${i + 1} 番目の設備が設備の形ではありません`)

@@ -5,11 +5,12 @@ import type { Background } from './background'
 import type { Link } from './flow'
 import type { Site } from './site'
 import { INJECTION_PRESET, copyTemplates, type EquipmentTemplate } from './templates'
+import type { Zone } from './zone'
 
 // 版 2 で敷地の外形（site）、版 3 で AGV の通路（aisles）、版 4 で設備の保守用の余白（clearance）、
 // 版 5 で工程のつなぎ（links）、版 6 で流れの再生の数値（flow）、版 7 で通路の一方通行（oneWay）、
-// 版 8 で AGV の台数（flow.agvCount）、版 9 で設備の種類の一覧（templates）を足した
-export const SCENE_VERSION = 9
+// 版 8 で AGV の台数（flow.agvCount）、版 9 で設備の種類の一覧（templates）、版 10 で置けない所（zones）を足した
+export const SCENE_VERSION = 10
 
 export type Rotation = 0 | 90 | 180 | 270
 
@@ -64,6 +65,7 @@ export type Scene = {
   version: typeof SCENE_VERSION
   background: Background | null // 建物の図面の画像。無ければ null
   site: Site | null // 敷地の外形。無ければ null
+  zones: Zone[] // 置けない所（防火壁・柱など）
   equipment: Equipment[]
   aisles: Aisle[] // AGV の通路
   links: Link[] // 工程のつなぎ（設備から設備へ、ものが流れる向き）
@@ -77,6 +79,7 @@ export function createEmptyScene(templates: readonly EquipmentTemplate[] = INJEC
     version: SCENE_VERSION,
     background: null,
     site: null,
+    zones: [],
     equipment: [],
     aisles: [],
     links: [],
