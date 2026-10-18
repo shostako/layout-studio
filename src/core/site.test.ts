@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyCommand } from './commands'
 import { SCENE_VERSION, createEmptyScene, type Equipment, type Scene } from './scene'
-import { checkSite, equipmentOutsideSite, pointInSite, rectInSite, rectSite, sceneExtent, siteArea, siteBounds, type Site } from './site'
+import { checkSite, equipmentOutsideSite, moveSiteVertex, parseSiteSteps, pointInSite, rectInSite, rectSite, sceneExtent, siteArea, siteBounds, siteFromSteps, siteToSteps, type Site } from './site'
 import { parseScene, serializeScene } from './sceneFile'
 
 const site = (...xy: [number, number][]): Site => ({ points: xy.map(([x, y]) => ({ x, y })) })
@@ -178,5 +178,69 @@ describe('sceneExtent（「全体」で見せる範囲）', () => {
   it('敷地と遠くの設備を両方囲む', () => {
     const scene: Scene = { ...createEmptyScene(), site: rectSite(0, 0, 10000, 5000), equipment: [eq('E1', { x: 100000, y: 2500, width: 2000, depth: 1000 })] }
     expect(sceneExtent(scene)).toEqual({ x: 0, y: 0, width: 101000, height: 5000 })
+  })
+})
+
+describe('寸法で描く', () => {
+  it('向きと長さの列を読む（漢字・英字・矢印・m・桁区切り・全角）', () => {
+    const r = parseSiteSteps('右 35,500 下45.7m、L 20000; ↑６４００\n左15500 u39300')
+    if (!r.ok) throw new Error(r.error)
+    expect(r.steps).toEqual([
+      { dx: 35500, dy: 0 },
+      { dx: 0, dy: 45700 },
+      { dx: -20000, dy: 0 },
+      { dx: 0, dy: -6400 },
+      { dx: -15500, dy: 0 },
+      { dx: 0, dy: -39300 },
+    ])
+  })
+  it('読めない所・長さ 0・辺が 1 つは理由つきで断る', () => {
+    expect(parseSiteSteps('右 100 斜め 5')).toMatchObject({ ok: false })
+    expect(parseSiteSteps('右 0 下 100')).toMatchObject({ ok: false })
+    expect(parseSiteSteps('右 100')).toMatchObject({ ok: false })
+    expect(parseSiteSteps('')).toMatchObject({ ok: false })
+  })
+  it('L 字を始点から描き、始点に戻る辺は頂点に入れない。面積は 2 つの長方形の和', () => {
+    const p = parseSiteSteps('右 15500 上 6400 右 20000 下 45700 左 35500 上 39300')
+    if (!p.ok) throw new Error(p.error)
+    const r = siteFromSteps({ x: 0, y: 6400 }, p.steps)
+    if (!r.ok) throw new Error(r.error)
+    expect(r.site.points).toHaveLength(6)
+    expect(r.site.points[0]).toEqual({ x: 0, y: 6400 })
+    expect(siteArea(r.site) / 1e6).toBeCloseTo(15.5 * 39.3 + 20 * 45.7)
+  })
+  it('始点に戻らなければ、最後の頂点から始点へ自動で閉じる', () => {
+    const p = parseSiteSteps('右 1000 下 1000')
+    if (!p.ok) throw new Error(p.error)
+    const r = siteFromSteps({ x: 0, y: 0 }, p.steps)
+    if (!r.ok) throw new Error(r.error)
+    expect(r.site.points).toEqual([
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 },
+      { x: 1000, y: 1000 },
+    ])
+  })
+  it('辺が交わる外形は断る', () => {
+    const p = parseSiteSteps('右 1000 下 1000 左 500 上 2000')
+    if (!p.ok) throw new Error(p.error)
+    expect(siteFromSteps({ x: 0, y: 0 }, p.steps)).toMatchObject({ ok: false })
+  })
+  it('水平・垂直の辺だけの外形は文字列に戻せて、読み直すと同じ形。斜めの辺があれば null', () => {
+    const site = rectSite(100, 200, 3000, 2000)
+    const text = siteToSteps(site)!
+    expect(text).toBe('右 3000 下 2000 左 3000 上 2000')
+    const p = parseSiteSteps(text)
+    if (!p.ok) throw new Error(p.error)
+    expect(siteFromSteps(site.points[0]!, p.steps)).toEqual({ ok: true, site })
+    expect(siteToSteps({ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 10 }] })).toBeNull()
+  })
+  it('頂点を 1 つ動かす', () => {
+    const s = moveSiteVertex(rectSite(0, 0, 10, 10), 2, { x: 20, y: 15 })
+    expect(s.points).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 20, y: 15 },
+      { x: 0, y: 10 },
+    ])
   })
 })

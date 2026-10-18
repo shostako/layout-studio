@@ -426,6 +426,30 @@ body {
 .site-vertex.closing {
   fill: #2e7d32;
 }
+.site-steps,
+.site-vertices {
+  margin: 4px 0;
+}
+.site-steps summary,
+.site-vertices summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+.site-steps textarea {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  resize: vertical;
+}
+.site-vertex-list {
+  max-height: 220px;
+  overflow-y: auto;
+  font-variant-numeric: tabular-nums;
+}
+.site-vertex-list .site-rect-form {
+  margin: 2px 0;
+}
 .site-rect-form {
   display: flex;
   gap: 4px;

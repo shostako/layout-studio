@@ -183,3 +183,89 @@ export function sceneExtent(scene: Scene): Rect | null {
   const bottom = Math.max(...rects.map((r) => r.y + r.height))
   return { x, y, width: right - x, height: bottom - y }
 }
+
+// ---- 寸法で描く ----
+// 「右 35500 下 45700 左 20000 …」のように、向きと長さを順に並べた文字列で外形を描く。
+// 向きは 右・左・上・下（R・L・U・D、→・←・↑・↓ も可）。長さは mm（「35.5m」は m、「35,500」の桁区切りも可）。
+// 区切りは空白・読点・セミコロン・改行。最後の頂点から始点へは自動で閉じる（始点に戻る辺は書いても書かなくてもよい）
+
+export type SiteStep = { dx: number; dy: number }
+
+const STEP_DIR: Record<string, SiteStep> = {
+  右: { dx: 1, dy: 0 },
+  左: { dx: -1, dy: 0 },
+  上: { dx: 0, dy: -1 },
+  下: { dx: 0, dy: 1 },
+  r: { dx: 1, dy: 0 },
+  l: { dx: -1, dy: 0 },
+  u: { dx: 0, dy: -1 },
+  d: { dx: 0, dy: 1 },
+  '→': { dx: 1, dy: 0 },
+  '←': { dx: -1, dy: 0 },
+  '↑': { dx: 0, dy: -1 },
+  '↓': { dx: 0, dy: 1 },
+}
+const STEP_RE = /(右|左|上|下|[RLUDrlud]|→|←|↑|↓)\s*([0-9０-９][0-9０-９,，]*(?:[.．][0-9０-９]+)?)\s*(mm|m|ｍｍ|ｍ)?/y
+const SEP_RE = /[\s、,，;；]+/y
+
+const toHalf = (s: string) => s.replace(/[０-９．]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+
+export function parseSiteSteps(text: string): { ok: true; steps: SiteStep[] } | { ok: false; error: string } {
+  const steps: SiteStep[] = []
+  let i = 0
+  while (i < text.length) {
+    SEP_RE.lastIndex = i
+    if (SEP_RE.exec(text)) {
+      i = SEP_RE.lastIndex
+      continue
+    }
+    STEP_RE.lastIndex = i
+    const m = STEP_RE.exec(text)
+    if (!m) return { ok: false, error: `「${text.slice(i, i + 8)}」が読めません。「右 35500」のように向きと長さを並べてください` }
+    i = STEP_RE.lastIndex
+    const num = Number(toHalf(m[2]!).replace(/[,，]/g, ''))
+    const unit = m[3] === 'm' || m[3] === 'ｍ' ? 1000 : 1
+    const len = num * unit
+    if (!(Number.isFinite(len) && len > 0)) return { ok: false, error: `「${m[0].trim()}」の長さが正の数ではありません` }
+    const dir = STEP_DIR[m[1]!.toLowerCase()]!
+    steps.push({ dx: dir.dx * len, dy: dir.dy * len })
+  }
+  if (steps.length < 2) return { ok: false, error: '辺を 2 つ以上並べてください（最後の頂点から始点へは自動で閉じる）' }
+  return { ok: true, steps }
+}
+
+// 始点から辺を順にたどった外形。最後に始点へ戻っていれば、その頂点は始点と同じなので落とす
+export function siteFromSteps(start: Point, steps: readonly SiteStep[]): { ok: true; site: Site } | { ok: false; error: string } {
+  const points: Point[] = [{ ...start }]
+  for (const s of steps) {
+    const last = points[points.length - 1]!
+    points.push({ x: last.x + s.dx, y: last.y + s.dy })
+  }
+  const end = points[points.length - 1]!
+  if (Math.abs(end.x - start.x) <= EPS && Math.abs(end.y - start.y) <= EPS) points.pop()
+  const site = { points }
+  const bad = checkSite(site)
+  return bad ? { ok: false, error: bad } : { ok: true, site }
+}
+
+// 外形の辺を「右 35500 下 45700 …」の文字列に書く（水平・垂直でない辺は書けないので null）。描いた外形を寸法の欄に戻すのに使う
+export function siteToSteps(site: Site): string | null {
+  const pts = site.points
+  const out: string[] = []
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]!
+    const b = pts[(i + 1) % pts.length]!
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const round = (v: number) => Math.round(Math.abs(v) * 1000) / 1000
+    if (Math.abs(dy) <= EPS) out.push(`${dx > 0 ? '右' : '左'} ${round(dx)}`)
+    else if (Math.abs(dx) <= EPS) out.push(`${dy > 0 ? '下' : '上'} ${round(dy)}`)
+    else return null
+  }
+  return out.join(' ')
+}
+
+// 外形の i 番目の頂点を p に動かした外形（確かめは setSite がする）
+export function moveSiteVertex(site: Site, i: number, p: Point): Site {
+  return { points: site.points.map((q, j) => (j === i ? { x: p.x, y: p.y } : q)) }
+}
