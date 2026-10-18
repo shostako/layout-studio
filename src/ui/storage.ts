@@ -52,7 +52,12 @@ const errText = (err: unknown) =>
 
 const clock = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-export function mountStorage(canvas: Canvas, editor: Editor, plans: Plans): void {
+export type Autosave = {
+  // 待っている自動保存を今すぐ書き、書き終わるまで待つ。書けなかったら false（開き直す前などに使う）
+  flush(): Promise<boolean>
+}
+
+export function mountStorage(canvas: Canvas, editor: Editor, plans: Plans): Autosave {
   // ---- 上の道具バー: 新規・開く・保存と、自動保存の状態 ----
   const group = document.createElement('span')
   group.className = 'group file-group'
@@ -193,6 +198,14 @@ export function mountStorage(canvas: Canvas, editor: Editor, plans: Plans): void
     }
   })
 
+  const flush = async () => {
+    // 復元が終わる前は書かない（空のシーンで上書きしないため）。書くものも無い
+    if (!ready) return true
+    clearTimeout(timer)
+    await autosave()
+    return unchanged()
+  }
+
   const restore = async () => {
     try {
       db = await openDb()
@@ -221,4 +234,5 @@ export function mountStorage(canvas: Canvas, editor: Editor, plans: Plans): void
     editor.render()
   }
   void restore()
+  return { flush }
 }
