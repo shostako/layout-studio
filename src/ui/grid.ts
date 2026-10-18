@@ -1,8 +1,9 @@
-// 道具バーの「マス目」と「既定に戻す」「既定にする」。マス目の大きさは canvas、スナップは editor が持つ。
+// 道具バーの「マス目」と「既定に戻す」「既定にする」「初期設定」。マス目の大きさは canvas、スナップは editor が持つ。
 // 既定はこのブラウザに覚えておき（localStorage）、開いたときもその値で始める。計算と読み書きの形は src/core/gridPrefs.ts。
 import type { Canvas } from './canvas'
 import type { Editor } from './editor'
 import { FACTORY_GRID_PREFS, GRID_CELLS, formatGridPrefs, parseGridPrefs, type GridPrefs } from '../core/gridPrefs'
+import { prefKeys } from '../core/prefs'
 import { formatLength } from '../core/viewport'
 
 const KEY = 'layout-studio:grid-default'
@@ -58,6 +59,19 @@ export function mountGrid(canvas: Canvas, editor: Editor): void {
       flash(save, '覚えられない')
     }
   })
+  // 覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を全部消して、アプリの初めの値で開き直す。
+  // 図面と案（自動保存）は消さない。開き直す前の自動保存は pagehide で書き出される
+  const factory = mkButton('初期設定', 'このブラウザに覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を、アプリの初めの値に戻す。図面と案は消えない', () => {
+    if (!window.confirm('覚えた設定（マス目・スナップの既定、表示、白黒、ユニットごと）を初めの値に戻して、開き直します。図面と案は消えません。')) return
+    try {
+      const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? '')
+      for (const k of prefKeys(keys)) localStorage.removeItem(k)
+    } catch {
+      flash(factory, '戻せない')
+      return
+    }
+    location.reload()
+  })
   select.addEventListener('change', () => {
     canvas.setGridCell(Number(select.value))
     select.blur()
@@ -65,8 +79,8 @@ export function mountGrid(canvas: Canvas, editor: Editor): void {
 
   // スナップの隣に置く
   const snap = canvas.toolbar.querySelector('.snap-label')
-  if (snap) snap.after(label, reset, save)
-  else canvas.toolbar.append(label, reset, save)
+  if (snap) snap.after(label, reset, save, factory)
+  else canvas.toolbar.append(label, reset, save, factory)
   // 自動のときは、今の細かさを選択の中に出す（例: 「自動（500 mm）」）。下の段にも出ているが、目に入りにくい
   const autoOption = select.options[0]!
   canvas.onGridStep((minor) => {
