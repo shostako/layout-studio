@@ -8,8 +8,8 @@ import type { Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const MARK_PX = 4
-// 名前の文字の大きさ（画面の px）
-const LABEL_PX = 11
+// 名前の文字が小さすぎるとき（mm）は書かない（細い壁など）
+const LABEL_MIN_MM = 60
 
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
   const el = document.createElementNS(SVG_NS, tag)
@@ -147,8 +147,9 @@ export function mountZones(canvas: Canvas, editor: Editor): void {
   let listed: readonly Zone[] | undefined
   const renderList = (zones: readonly Zone[]) => {
     if (zones === listed) return
-    // 入れている途中（欄にフォーカス）は作り直さない
-    if (list.contains(document.activeElement)) return
+    // 入れている途中（欄の入力にフォーカス）は作り直さない。「消す」のボタンにフォーカスがあるときは作り直す
+    const active = document.activeElement
+    if (active instanceof HTMLInputElement && list.contains(active)) return
     listed = zones
     list.replaceChildren(
       ...zones.map((z) => {
@@ -198,13 +199,10 @@ export function mountZones(canvas: Canvas, editor: Editor): void {
 
   // ---- シーンに合わせて描き直す ----
   let drawn: readonly Zone[] | undefined
-  let drawnScale = 0
   function paint() {
     const zones = editor.scene().zones
-    const k = scale()
-    if (zones !== drawn || k !== drawnScale) {
+    if (zones !== drawn) {
       drawn = zones
-      drawnScale = k
       layer.replaceChildren(
         ...zones.flatMap((z) => {
           const g = svg('g', { class: 'zone-shape' })
@@ -213,9 +211,9 @@ export function mountZones(canvas: Canvas, editor: Editor): void {
           title.textContent = z.name
           rect.append(title)
           g.append(rect)
-          // 名前は、入る大きさのときだけ描く（細い壁には書かない）
-          const font = LABEL_PX / k
-          if (z.width > font * z.name.length && z.height > font * 1.4) {
+          // 名前は設備の名前と同じく図面の mm で、長方形に収まる大きさで描く（倍率に左右されない）。細い壁には書かない
+          const font = Math.min(300, z.height * 0.5, z.width / Math.max(z.name.length, 1) / 1.1)
+          if (font >= LABEL_MIN_MM) {
             const t = svg('text', { class: 'zone-label', x: z.x + z.width / 2, y: z.y + z.height / 2, 'font-size': font })
             t.textContent = z.name
             g.append(t)

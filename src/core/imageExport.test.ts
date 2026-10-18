@@ -31,6 +31,15 @@ describe('exportFrame', () => {
     expect(f.height).toBe(Math.round(7260 * (2000 / 22260)))
   })
 
+  it('置けない所も範囲に入れる（置けない所だけでも書き出せる）', () => {
+    const zone = { id: 'zone-1', name: '防火壁', x: 10000, y: 0, width: 200, height: 20000 }
+    const only = exportFrame({ ...createEmptyScene(), zones: [zone] })!
+    expect(only.view.x).toBeLessThanOrEqual(10000)
+    expect(only.view.y + only.view.height).toBeGreaterThanOrEqual(20000)
+    const f = exportFrame({ ...createEmptyScene(), zones: [zone], equipment: [eq('a', 1000, 1000)] })!
+    expect(f.view.y + f.view.height).toBeGreaterThanOrEqual(20000)
+  })
+
   it('敷地も範囲に入れる', () => {
     const s = { ...createEmptyScene(), site: rectSite(0, 0, 30000, 20000), equipment: [eq('a', 1000, 1000)] }
     const f = exportFrame(s)!
