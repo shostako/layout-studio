@@ -159,9 +159,16 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
   // 今の背景が読んだ PDF のページなら、その PDF（別のページを読む・紙の縮尺で合わせるのに使う）
   let pdf: { data: ArrayBuffer; name: string; dpi: number; page: number; pages: number; background: Background } | null = null
   const isPdf = (blob: Blob, name: string) => blob.type === 'application/pdf' || /\.pdf$/i.test(name)
-  const placePdf = async (data: ArrayBuffer, name: string, page: number) => {
+  // 読み込みの番号。大きな PDF を画像にしている間に別の図面・ページ・サンプルを選んだら、先の読み込みは終わっても置かない
+  let loading = 0
+  const stale = (seq: number) => seq !== loading
+  const showError = (seq: number, err: unknown) => {
+    if (!stale(seq)) hint.textContent = err instanceof Error ? err.message : String(err)
+  }
+  const placePdf = async (data: ArrayBuffer, name: string, page: number, seq: number) => {
     hint.textContent = 'PDF を画像にしています…'
     const r = await renderPdfPage(data, page)
+    if (stale(seq)) return
     const label = r.pages > 1 ? `${name}（${r.page} / ${r.pages} ページ）` : name
     const background = createBackground(r.src, label, r.width, r.height)
     if (!editor.run({ type: 'setBackground', background })) return
@@ -173,35 +180,39 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
     fit()
     paint()
   }
-  const place = async (blob: Blob, name: string) => {
+  const place = async (blob: Blob, name: string, seq: number) => {
     try {
       if (isPdf(blob, name)) {
-        await placePdf(await blob.arrayBuffer(), name, 1)
+        const data = await blob.arrayBuffer()
+        if (!stale(seq)) await placePdf(data, name, 1, seq)
         return
       }
       const src = await readAsDataUrl(blob)
       const size = await imageSize(src)
+      if (stale(seq)) return
       if (!(size.width > 0 && size.height > 0)) throw new Error('画像の大きさが分かりません（SVG なら width と height を付けてください）')
       if (editor.run({ type: 'setBackground', background: createBackground(src, name, size.width, size.height) })) {
         hint.textContent = '仮の縮尺（幅 20 m）で置きました。「縮尺を合わせる」で 2 点を選んでください'
         fit()
       }
     } catch (err) {
-      hint.textContent = err instanceof Error ? err.message : String(err)
+      showError(seq, err)
     }
   }
   file.addEventListener('change', () => {
     const f = file.files?.[0]
     file.value = ''
-    if (f) void place(f, f.name)
+    if (f) void place(f, f.name, ++loading)
   })
   const loadSample = async () => {
+    const seq = ++loading
     try {
       const res = await fetch(SAMPLE_URL)
       if (!res.ok) throw new Error(`サンプルを読めませんでした（${res.status}）`)
-      await place(await res.blob(), 'sample-plan.svg')
+      const blob = await res.blob()
+      if (!stale(seq)) await place(blob, 'sample-plan.svg', seq)
     } catch (err) {
-      hint.textContent = err instanceof Error ? err.message : String(err)
+      showError(seq, err)
     }
   }
   const fit = () => {
@@ -228,9 +239,8 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
   pageBtn.addEventListener('click', () => {
     if (!pdf) return
     const n = Number(pageNo.value)
-    void placePdf(pdf.data, pdf.name, n).catch((err: unknown) => {
-      hint.textContent = err instanceof Error ? err.message : String(err)
-    })
+    const seq = ++loading
+    void placePdf(pdf.data, pdf.name, n, seq).catch((err: unknown) => showError(seq, err))
   })
 
   // ---- 縮尺合わせの道具 ----
