@@ -28,7 +28,7 @@ if (app) {
   const editor = mountEditor(canvas)
   // 「全体」（0 キー）はその時のシーンの背景・敷地・設備・通路を囲む範囲に合わせる
   canvas.setHomeSource(() => sceneExtent(editor.scene()))
-  mountGrid(canvas, editor)
+  const grid = mountGrid(canvas, editor)
   mountTemplates(canvas, editor)
   mountBlock(canvas, editor)
   mountAttach(canvas, editor)
@@ -40,7 +40,9 @@ if (app) {
   mountAisles(canvas, editor)
   mountPlayback(canvas, editor)
   const plans = mountPlans(canvas, editor)
-  mountStorage(canvas, editor, plans)
+  const storage = mountStorage(canvas, editor, plans)
+  // 「初期設定」で開き直す前に、待っている自動保存を書き終える
+  grid.setBeforeReload(storage.flush)
   mountCompare(canvas, editor, plans)
   mountAi(canvas, editor)
   mountLive(canvas, editor, plans)
