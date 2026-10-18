@@ -1,10 +1,11 @@
 // 図面を画像（PNG）に書き出すときの、写す範囲と画像の大きさ。DOM に触らない。
-// 写す範囲は、背景の図面・敷地・設備（余白まで）・通路の帯をまとめて囲む長方形に、周りの余白を足したもの。
+// 写す範囲は、背景の図面・敷地・設備（余白まで）・通路の帯・置けない所をまとめて囲む長方形に、周りの余白を足したもの。
 import { backgroundRect } from './background'
 import { aisleBounds, boundsOf } from './compare'
 import { clearanceRect, type Scene } from './scene'
 import { siteBounds } from './site'
 import type { Rect } from './viewport'
+import { zoneRect } from './zone'
 
 // 画像の長い辺の px（印刷や資料に貼っても粗く見えない大きさ）。ブラウザが扱える大きさに収める
 export const EXPORT_LONG_SIDE_PX = 3200
@@ -27,6 +28,7 @@ export function exportFrame(scene: Scene, longSidePx = EXPORT_LONG_SIDE_PX, with
     ...(scene.site ? [siteBounds(scene.site)] : []),
     ...scene.equipment.map(clearanceRect),
     ...aisleBounds(scene),
+    ...scene.zones.map(zoneRect),
   ]
   const b = boundsOf(rects)
   if (!b || b.width <= 0 || b.height <= 0) return null
