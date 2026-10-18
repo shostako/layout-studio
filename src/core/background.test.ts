@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backgroundRect, calibrate, checkBackground, createBackground, DEFAULT_BACKGROUND_WIDTH_MM } from './background'
+import { backgroundRect, calibrate, checkBackground, createBackground, DEFAULT_BACKGROUND_WIDTH_MM, paperMmPerPixel, paperScaleCalibration, pdfRenderScale, PDF_MAX_PIXELS } from './background'
 import { applyCommand, type Command } from './commands'
 import { createEmptyScene, type Scene } from './scene'
 
@@ -93,5 +93,37 @@ describe('背景のコマンド', () => {
     const empty = createEmptyScene()
     expect(err(empty, { type: 'calibrateBackground', a: { x: 0, y: 0 }, b: { x: 1, y: 0 }, distance: 1 })).toMatch('背景')
     expect(err(empty, { type: 'moveBackground', dx: 1, dy: 1 })).toMatch('背景')
+  })
+})
+
+describe('PDF の図面', () => {
+  it('A3 横（1190.64 × 841.92 pt）を 300 dpi で画像にすると長辺 4961 px', () => {
+    const { scale, dpi } = pdfRenderScale(1190.64, 841.92)
+    expect(Math.round(1190.64 * scale)).toBe(4961)
+    expect(dpi).toBeCloseTo(300)
+  })
+  it('長辺が上限を超える紙は dpi を下げる', () => {
+    // A0 の長辺 3370 pt を 300 dpi にすると 14042 px。上限 6000 px に収める
+    const { scale, dpi } = pdfRenderScale(2384, 3370)
+    expect(3370 * scale).toBeCloseTo(PDF_MAX_PIXELS)
+    expect(dpi).toBeCloseTo((PDF_MAX_PIXELS / 3370) * 72)
+  })
+  it('紙の縮尺 1/400 を 300 dpi で読むと 1 px は 33.87 mm', () => {
+    expect(paperMmPerPixel(300, 400)).toBeCloseTo(33.8667, 3)
+    expect(paperMmPerPixel(72, 100)).toBeCloseTo(35.2778, 3)
+  })
+  it('紙の縮尺を 2 点と距離に直し、calibrate で当てると左上を動かさずにその縮尺になる', () => {
+    const bg = { ...createBackground('data:,', 'a.pdf', 4961, 3508), x: 1000, y: 2000 }
+    const c = paperScaleCalibration(bg, 300, 400)!
+    const r = calibrate(bg, c.a, c.b, c.distance)
+    if (!r.ok) throw new Error(r.error)
+    expect(r.background.mmPerPixel).toBeCloseTo(paperMmPerPixel(300, 400))
+    expect(r.background.x).toBeCloseTo(1000)
+    expect(r.background.y).toBeCloseTo(2000)
+  })
+  it('縮尺や dpi が正の数でなければ null', () => {
+    const bg = createBackground('data:,', 'a.pdf', 100, 100)
+    expect(paperScaleCalibration(bg, 300, 0)).toBeNull()
+    expect(paperScaleCalibration(bg, Number.NaN, 400)).toBeNull()
   })
 })

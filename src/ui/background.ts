@@ -1,9 +1,10 @@
-// 背景の図面: 画像を読む、2 点の距離で縮尺を合わせる、原点を合わせる、外す。
+// 背景の図面: 画像か PDF を読む、2 点の距離か紙の縮尺で縮尺を合わせる、原点を合わせる、外す。
 // シーンの変更は editor.run（コマンド）を通す。透明度と表示の入り切りは見え方なので、シーンに入れない。
 import type { Canvas } from './canvas'
 import type { Editor, Tool } from './editor'
-import { backgroundRect, createBackground, type Background } from '../core/background'
+import { backgroundRect, createBackground, paperScaleCalibration, type Background } from '../core/background'
 import { formatLength, type Point } from '../core/viewport'
+import { renderPdfPage } from './pdf'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const SAMPLE_URL = `${import.meta.env.BASE_URL}sample-plan.svg`
@@ -72,9 +73,9 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
   }
   const file = document.createElement('input')
   file.type = 'file'
-  file.accept = 'image/*'
+  file.accept = 'image/*,application/pdf,.pdf'
   file.hidden = true
-  const loadBtn = mk(row1, '画像を読む', '建物の図面の画像（PNG・JPEG・SVG など）を背景に置く', () => file.click())
+  const loadBtn = mk(row1, '図面を読む', '建物の図面（PDF か、PNG・JPEG・SVG などの画像）を背景に置く。PDF は 1 ページを画像にする', () => file.click())
   mk(row1, 'サンプル', '架空の工場の図面（36 m × 24 m）を背景に置く', () => void loadSample())
   const removeBtn = mk(row1, '外す', '背景の画像を外す（元に戻すで戻せる）', () => {
     editor.run({ type: 'setBackground', background: null })
@@ -125,12 +126,59 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
   const hint = document.createElement('div')
   hint.className = 'hint'
 
+  // PDF を読んだ直後に出す欄: 紙の縮尺で合わせる、別のページを読む
+  const pdfForm = document.createElement('form')
+  pdfForm.className = 'pdf-form'
+  pdfForm.hidden = true
+  const denom = document.createElement('input')
+  denom.type = 'number'
+  denom.min = '1'
+  denom.step = '1'
+  denom.placeholder = '100'
+  denom.title = '図面に書いてある縮尺（1/400 なら 400）。スキャンや印刷で数 % ずれることがあるので、寸法線で確かめる'
+  const denomBtn = document.createElement('button')
+  denomBtn.type = 'submit'
+  denomBtn.textContent = '合わせる'
+  const pageBox = document.createElement('span')
+  const pageNo = document.createElement('input')
+  pageNo.type = 'number'
+  pageNo.min = '1'
+  pageNo.step = '1'
+  pageNo.title = '背景にするページ'
+  const pageBtn = document.createElement('button')
+  pageBtn.type = 'button'
+  pageBtn.textContent = '読む'
+  const pageCount = document.createElement('span')
+  pageBox.append(' ページ ', pageNo, pageCount, ' ', pageBtn)
+  pdfForm.append('紙の縮尺 1/', denom, ' ', denomBtn, pageBox)
+
   canvas.side.prepend(h, box)
-  box.append(info, row1, row2, view, ask, hint, file)
+  box.append(info, row1, row2, view, ask, pdfForm, hint, file)
 
   // ---- 読み込み ----
+  // 今の背景が読んだ PDF のページなら、その PDF（別のページを読む・紙の縮尺で合わせるのに使う）
+  let pdf: { data: ArrayBuffer; name: string; dpi: number; page: number; pages: number; background: Background } | null = null
+  const isPdf = (blob: Blob, name: string) => blob.type === 'application/pdf' || /\.pdf$/i.test(name)
+  const placePdf = async (data: ArrayBuffer, name: string, page: number) => {
+    hint.textContent = 'PDF を画像にしています…'
+    const r = await renderPdfPage(data, page)
+    const label = r.pages > 1 ? `${name}（${r.page} / ${r.pages} ページ）` : name
+    const background = createBackground(r.src, label, r.width, r.height)
+    if (!editor.run({ type: 'setBackground', background })) return
+    pdf = { data, name, dpi: r.dpi, page: r.page, pages: r.pages, background }
+    pageNo.value = String(r.page)
+    pageNo.max = String(r.pages)
+    pageCount.textContent = ` / ${r.pages}`
+    hint.textContent = `PDF の ${r.page} ページ目を ${Math.round(r.dpi)} dpi の画像にして、仮の縮尺（幅 20 m）で置きました。図面の縮尺（1/100 なら 100）を入れて「合わせる」か、「縮尺を合わせる」で寸法の分かる 2 点を選んでください`
+    fit()
+    paint()
+  }
   const place = async (blob: Blob, name: string) => {
     try {
+      if (isPdf(blob, name)) {
+        await placePdf(await blob.arrayBuffer(), name, 1)
+        return
+      }
       const src = await readAsDataUrl(blob)
       const size = await imageSize(src)
       if (!(size.width > 0 && size.height > 0)) throw new Error('画像の大きさが分かりません（SVG なら width と height を付けてください）')
@@ -159,6 +207,31 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
   const fit = () => {
     canvas.fitHome()
   }
+  pdfForm.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const bg = editor.scene().background
+    if (!pdf || !bg) return
+    const c = paperScaleCalibration(bg, pdf.dpi, Number(denom.value))
+    if (!c) {
+      hint.textContent = '縮尺は正の数で入れてください（1/400 なら 400）'
+      denom.focus()
+      return
+    }
+    if (editor.run({ type: 'calibrateBackground', ...c })) {
+      const now = editor.scene().background
+      hint.textContent = now
+        ? `紙の縮尺 1/${denom.value} で合わせました（${fmtScale(now)}）。スキャンや印刷で数 % ずれることがあるので、寸法線を「縮尺を合わせる」で確かめると確実です`
+        : ''
+      fit()
+    }
+  })
+  pageBtn.addEventListener('click', () => {
+    if (!pdf) return
+    const n = Number(pageNo.value)
+    void placePdf(pdf.data, pdf.name, n).catch((err: unknown) => {
+      hint.textContent = err instanceof Error ? err.message : String(err)
+    })
+  })
 
   // ---- 縮尺合わせの道具 ----
   let cal: { a: Point | null; b: Point | null; shift: boolean } = { a: null, b: null, shift: false }
@@ -285,6 +358,10 @@ export function mountBackground(canvas: Canvas, editor: Editor): void {
       info.textContent = 'なし'
     }
     info.classList.toggle('warn', !!bg && !bg.calibrated)
+    // 背景が読んだ PDF のページでなくなったら（外す・別の画像）、PDF の欄をしまう。縮尺や位置を変えても画像は同じなので残す
+    if (pdf && bg?.src !== pdf.background.src) pdf = null
+    pdfForm.hidden = !pdf
+    pageBox.hidden = !pdf || pdf.pages < 2
     for (const b of [removeBtn, calBtn, originBtn]) b.disabled = !bg
     for (const el of [show, range]) el.disabled = !bg
     loadBtn.disabled = false

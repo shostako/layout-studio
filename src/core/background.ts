@@ -70,3 +70,31 @@ export function calibrate(
     },
   }
 }
+
+// ---- PDF の図面 ----
+// PDF のページの大きさは pt（1/72 インチ）。1 ページを画像にして背景にする。
+
+// 画像にするときの解像度（dpi）。スキャンした A3 の図面がそのまま読める細かさ
+export const PDF_RENDER_DPI = 300
+// 画像の長辺の上限（px）。大きな紙でも、シーンの JSON とブラウザの描画が重くなりすぎないように
+export const PDF_MAX_PIXELS = 6000
+
+// ページ（pt）を画像にする倍率と、そのときの dpi。長辺が上限を超えるなら dpi を下げる
+export function pdfRenderScale(widthPt: number, heightPt: number, dpi = PDF_RENDER_DPI, maxPixels = PDF_MAX_PIXELS): { scale: number; dpi: number } {
+  const long = Math.max(widthPt, heightPt)
+  let scale = dpi / 72
+  if (long > 0 && long * scale > maxPixels) scale = maxPixels / long
+  return { scale, dpi: scale * 72 }
+}
+
+// 紙の縮尺 1/denominator の図面を dpi の画像にしたときの、1 px の mm
+export function paperMmPerPixel(dpi: number, denominator: number): number {
+  return (25.4 / dpi) * denominator
+}
+
+// 紙の縮尺から背景の縮尺を決める。calibrate と同じく左上を動かさない形で、2 点と距離に直して返す（calibrateBackground に渡す）
+export function paperScaleCalibration(bg: Background, dpi: number, denominator: number): { a: Point; b: Point; distance: number } | null {
+  if (!(Number.isFinite(dpi) && dpi > 0 && Number.isFinite(denominator) && denominator > 0)) return null
+  const r = backgroundRect(bg)
+  return { a: { x: r.x, y: r.y }, b: { x: r.x + r.width, y: r.y }, distance: bg.pixelWidth * paperMmPerPixel(dpi, denominator) }
+}
