@@ -1,9 +1,9 @@
-// 敷地の外形: クリックで多角形を描く、寸法で長方形を置く、消す。面積とはみ出しの台数を出す。
+// 敷地の外形: クリックで多角形を描く、寸法で長方形を置く、辺の向きと長さで描く、頂点を数値で直す、消す。面積とはみ出しの台数を出す。
 // シーンの変更は editor.run（コマンド）を通す。描いている途中の頂点は画面の状態で、閉じたときに 1 回だけ setSite を出す。
 import type { Canvas } from './canvas'
 import type { Editor, Tool } from './editor'
 import { snapValue } from '../core/placement'
-import { equipmentOutsideSite, rectSite, siteArea, siteBounds, type Site } from '../core/site'
+import { equipmentOutsideSite, moveSiteVertex, parseSiteSteps, rectSite, siteArea, siteBounds, siteFromSteps, siteToSteps, type Site } from '../core/site'
 import { formatLength, type Point } from '../core/viewport'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -80,9 +80,50 @@ export function mountSite(canvas: Canvas, editor: Editor): void {
   rectBtn.textContent = '長方形'
   rectBtn.title = '原点 (0, 0) を左上に、この寸法の長方形を敷地にする'
   rectForm.append(rw, '×', rd, ' mm ', rectBtn)
+  // 辺の向きと長さを順に入れて描く（L 字など、長方形でない建物の外形）
+  const stepsBox = document.createElement('details')
+  stepsBox.className = 'site-steps'
+  const stepsSummary = document.createElement('summary')
+  stepsSummary.textContent = '寸法で描く'
+  stepsSummary.title = '始点と、辺の向き・長さの列で外形を描く（図面の寸法線の値をそのまま入れる）'
+  const stepsForm = document.createElement('form')
+  stepsForm.noValidate = true
+  const sx = mkNum(0, '始点の x（mm）。背景の「原点を合わせる」で建物の角を原点にしておくと 0, 0 で描ける')
+  const sy = mkNum(0, '始点の y（mm）')
+  for (const el of [sx, sy]) el.removeAttribute('min')
+  const stepsText = document.createElement('textarea')
+  stepsText.rows = 3
+  stepsText.placeholder = '右 35500 下 45700 左 20000 …'
+  stepsText.title =
+    '向き（右・左・上・下。R・L・U・D も可）と長さ（mm。35.5m とも書ける）を順に並べる。最後の頂点から始点へは自動で閉じる'
+  const stepsBtn = document.createElement('button')
+  stepsBtn.type = 'submit'
+  stepsBtn.textContent = '描く'
+  const fromSiteBtn = document.createElement('button')
+  fromSiteBtn.type = 'button'
+  fromSiteBtn.textContent = '今の外形を入れる'
+  fromSiteBtn.title = '今の敷地の外形の始点と辺を欄に入れる（水平・垂直の辺だけの外形）'
+  const startRow = document.createElement('div')
+  startRow.className = 'site-rect-form'
+  startRow.append('始点', sx, ',', sy, 'mm')
+  const stepsActions = document.createElement('div')
+  stepsActions.className = 'actions'
+  stepsActions.append(stepsBtn, fromSiteBtn)
+  stepsForm.append(startRow, stepsText, stepsActions)
+  stepsBox.append(stepsSummary, stepsForm)
+
+  // 頂点を数値で直す
+  const vertBox = document.createElement('details')
+  vertBox.className = 'site-vertices'
+  const vertSummary = document.createElement('summary')
+  vertSummary.textContent = '頂点を数値で直す'
+  const vertList = document.createElement('div')
+  vertList.className = 'site-vertex-list'
+  vertBox.append(vertSummary, vertList)
+
   const hint = document.createElement('div')
   hint.className = 'hint'
-  box.append(info, row, rectForm, hint)
+  box.append(info, row, rectForm, stepsBox, vertBox, hint)
 
   // 背景の欄の下、ひな形の上に置く
   const templatesHeading = canvas.side.querySelector('h2 + .templates')?.previousElementSibling
@@ -106,6 +147,90 @@ export function mountSite(canvas: Canvas, editor: Editor): void {
       fit()
     }
   })
+
+  stepsForm.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const x = Number(sx.value)
+    const y = Number(sy.value)
+    if (!(Number.isFinite(x) && Number.isFinite(y))) {
+      hint.textContent = '始点は数（mm）で入れてください'
+      return
+    }
+    const p = parseSiteSteps(stepsText.value)
+    if (!p.ok) {
+      hint.textContent = p.error
+      return
+    }
+    const r = siteFromSteps({ x, y }, p.steps)
+    if (!r.ok) {
+      hint.textContent = r.error
+      return
+    }
+    if (editor.run({ type: 'setSite', site: r.site })) {
+      hint.textContent = `外形を描きました（頂点 ${r.site.points.length}、面積 ${fmtArea(siteArea(r.site))}）`
+      fit()
+    }
+  })
+  const fillFromSite = () => {
+    const site = editor.scene().site
+    if (!site) return
+    const text = siteToSteps(site)
+    if (text === null) {
+      hint.textContent = '斜めの辺がある外形は寸法の欄に入れられません。「頂点を数値で直す」で直してください'
+      return
+    }
+    sx.value = String(site.points[0]!.x)
+    sy.value = String(site.points[0]!.y)
+    stepsText.value = text
+    hint.textContent = ''
+  }
+  fromSiteBtn.addEventListener('click', fillFromSite)
+  // 開いたときに欄が空なら、今の外形を入れておく（直すところから始められる）
+  stepsBox.addEventListener('toggle', () => {
+    if (stepsBox.open && stepsText.value.trim() === '' && editor.scene().site) fillFromSite()
+  })
+
+  // 頂点の欄: 外形が変わったら作り直す。入れている途中（欄にフォーカス）は作り直さない
+  let listed: Site | null | undefined
+  const listVertices = (site: Site | null) => {
+    if (site === listed) return
+    if (vertList.contains(document.activeElement)) return
+    listed = site
+    vertList.replaceChildren()
+    if (!site) {
+      vertList.textContent = '外形がありません'
+      return
+    }
+    for (const [i, p] of site.points.entries()) {
+      const r = document.createElement('div')
+      r.className = 'site-rect-form'
+      const vx = mkNum(p.x, `頂点 ${i + 1} の x（mm）`)
+      const vy = mkNum(p.y, `頂点 ${i + 1} の y（mm）`)
+      for (const el of [vx, vy]) el.removeAttribute('min')
+      const commit = () => {
+        const cur = editor.scene().site
+        const x = Number(vx.value)
+        const y = Number(vy.value)
+        if (!cur || !cur.points[i] || !(Number.isFinite(x) && Number.isFinite(y))) return
+        if (x === cur.points[i]!.x && y === cur.points[i]!.y) return
+        if (editor.run({ type: 'setSite', site: moveSiteVertex(cur, i, { x, y }) })) hint.textContent = `頂点 ${i + 1} を動かしました`
+        else {
+          // 辺が交わるなど。理由は editor の欄に出る。欄を今の値に戻す
+          vx.value = String(cur.points[i]!.x)
+          vy.value = String(cur.points[i]!.y)
+        }
+      }
+      for (const el of [vx, vy])
+        el.addEventListener('change', () => {
+          commit()
+          // 入れ終わったら、ほかの頂点の値も合わせて作り直す
+          listed = undefined
+          queueMicrotask(() => listVertices(editor.scene().site))
+        })
+      r.append(`${i + 1}`, vx, ',', vy)
+      vertList.append(r)
+    }
+  }
 
   // ---- 外形を描く道具 ----
   let pts: Point[] = []
@@ -229,6 +354,8 @@ export function mountSite(canvas: Canvas, editor: Editor): void {
       info.classList.remove('warn')
     }
     clearBtn.disabled = !site
+    fromSiteBtn.disabled = !site
+    listVertices(site)
   }
   editor.onRender(paint)
   paint()
