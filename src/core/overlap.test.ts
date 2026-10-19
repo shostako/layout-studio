@@ -204,14 +204,48 @@ describe('成形機に載る取出機', () => {
   })
 
   it('つないでいなければ示す。ほかの設備との重なりはつないでいても示す', () => {
-    expect(findOverlaps(scene([machine, robot])).map((o) => o.kind)).toEqual(['equipment', 'clearance', 'clearance'])
+    // 余白への入り込みは、頭上の取出機と床の成形機の組なので示さない
+    expect(findOverlaps(scene([machine, robot])).map((o) => o.kind)).toEqual(['equipment'])
     const o = findOverlaps({ ...scene([machine, robot, other]), links: [{ from: 'm', to: 'r' }] })
-    // other は成形機の下の余白に入り、取出機の下の余白にも入る
-    expect(o.map((x) => x.kind === 'clearance' && `${x.owner}>${x.equipment}`)).toEqual(['m>x', 'r>x'])
+    // other（別の取出機）は取出機の下の余白に入る。成形機の余白は床の保守の場所なので、頭上の取出機は入っても示さない
+    expect(o.map((x) => x.kind === 'clearance' && `${x.owner}>${x.equipment}`)).toEqual(['r>x'])
   })
 
   it('成形機どうし・取出機どうしは、つないでいても示す', () => {
     const m2 = eq('m2', 5000, 0, 10000, 2800)
     expect(findOverlaps({ ...scene([eq('m', 0, 0, 10000, 2800), m2]), links: [{ from: 'm', to: 'm2' }] })).toHaveLength(1)
+  })
+})
+
+describe('頭上の取出機と床の設備', () => {
+  const around = (mm: number) => ({ top: mm, right: mm, bottom: mm, left: mm })
+  const machine = { ...eq('m', 0, 0, 10000, 2800), clearance: around(1000) }
+  // 梁が成形機を横切り、下の余白を越えて型抜き機の上まで張り出す
+  const robot = { ...eq('r', 6000, -800, 800, 6000), kind: 'take-out-robot', clearance: around(500) }
+  const degating = { ...eq('d', 5800, 3800, 1500, 1500), kind: 'degating-machine', clearance: around(500) }
+  const units = { links: [{ from: 'm', to: 'r' }, { from: 'r', to: 'd' }] }
+
+  it('同じユニットの後工程とは、本体が重なっても示さない', () => {
+    expect(findOverlaps({ ...scene([machine, robot, degating]), ...units })).toEqual([])
+  })
+
+  it('ほかのユニットの床の設備とは本体の重なりを示し、余白への入り込みは示さない', () => {
+    const m2 = { ...eq('m2', 0, 7000, 10000, 2800), clearance: around(1000) }
+    const d2 = { ...eq('d2', 6200, 4800, 600, 600), kind: 'degating-machine', clearance: around(500) }
+    const o = findOverlaps({ ...scene([machine, robot, degating, m2, d2]), links: [...units.links, { from: 'm2', to: 'd2' }] })
+    expect(o.filter((x) => x.kind === 'equipment').map((x) => x.kind === 'equipment' && `${x.a}+${x.b}`)).toEqual(['r+d2', 'd+d2'])
+    // d2 は型抜き機 d の余白に入る（床どうし）。取出機の余白への入り込みは示さない
+    expect(o.filter((x) => x.kind === 'clearance').map((x) => x.kind === 'clearance' && `${x.owner}>${x.equipment}`)).toEqual(['d>d2', 'd2>d'])
+  })
+
+  it('同じユニットの取出機どうしは示す', () => {
+    const r2 = { ...robot, id: 'r2', name: 'r2', x: robot.x + 400 }
+    const o = findOverlaps({ ...scene([machine, robot, r2]), links: [{ from: 'm', to: 'r' }, { from: 'm', to: 'r2' }] })
+    expect(o.filter((x) => x.kind === 'equipment').map((x) => x.kind === 'equipment' && `${x.a}+${x.b}`)).toEqual(['r+r2'])
+  })
+
+  it('通路とは今までどおり示す', () => {
+    const o = findOverlaps({ ...scene([machine, robot, degating], [aisle('a', [[5000, 4200], [9000, 4200]])]), ...units })
+    expect(o.map((x) => x.kind === 'aisle' && x.equipment)).toEqual(['r', 'd'])
   })
 })

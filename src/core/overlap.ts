@@ -6,6 +6,7 @@
 import { aisleSegments, type Aisle } from './aisle'
 import { clearanceRect, footprint, worldClearance, type Equipment, type Scene } from './scene'
 import { findTemplate } from './templates'
+import { unitsOf } from './unit'
 import type { Point, Rect } from './viewport'
 import { zoneRect } from './zone'
 
@@ -162,13 +163,35 @@ export function isMounted(scene: Scene, a: Equipment, b: Equipment): boolean {
   return pair && scene.links.some((l) => (l.from === a.id && l.to === b.id) || (l.from === b.id && l.to === a.id))
 }
 
+// 載る設備（取出機）は頭上にある。同じユニットの床の設備（後工程）とは本体の重なりを示さない。
+// ほかのユニットの設備・通路・置けない所との本体の重なりは今までどおり示す（DECISIONS.md）
+function overheadPairs(scene: Scene): { sameUnit: (a: Equipment, b: Equipment) => boolean; floorClearance: (a: Equipment, b: Equipment) => boolean } {
+  const unitOf = new Map<string, string>()
+  for (const [anchor, members] of unitsOf(scene)) {
+    unitOf.set(anchor, anchor)
+    for (const m of members) unitOf.set(m, anchor)
+  }
+  const mounted = (e: Equipment) => findTemplate(scene.templates, e.kind)?.role === 'mounted'
+  return {
+    sameUnit: (a, b) => {
+      // 頭上と床の組だけ。同じユニットの頭上どうし（取出機 2 台など）は示す
+      if (mounted(a) === mounted(b)) return false
+      const u = unitOf.get(a.id)
+      return u !== undefined && u === unitOf.get(b.id)
+    },
+    // 余白は床の保守の場所なので、頭上の設備と床の設備の組では余白への入り込みを示さない（頭上どうしは示す）
+    floorClearance: (a, b) => mounted(a) !== mounted(b),
+  }
+}
+
 // シーンの中の重なりをすべて挙げる。設備どうしは配列の順に (a, b)、続いて設備と通路、続いて置けない所（設備、通路）、続いて余白（余白の持ち主の順）
 export function findOverlaps(scene: Scene): Overlap[] {
   const out: Overlap[] = []
   const fps = scene.equipment.map((eq) => ({ id: eq.id, eq, r: footprint(eq) }))
+  const overhead = overheadPairs(scene)
   for (let i = 0; i < fps.length; i++)
     for (let j = i + 1; j < fps.length; j++) {
-      if (isMounted(scene, fps[i]!.eq, fps[j]!.eq)) continue
+      if (isMounted(scene, fps[i]!.eq, fps[j]!.eq) || overhead.sameUnit(fps[i]!.eq, fps[j]!.eq)) continue
       const region = rectOverlap(fps[i]!.r, fps[j]!.r)
       if (region) out.push({ kind: 'equipment', a: fps[i]!.id, b: fps[j]!.id, region })
     }
@@ -197,7 +220,7 @@ export function findOverlaps(scene: Scene): Overlap[] {
     const zone = clearanceZone(owner)
     if (zone.length === 0) continue
     for (const { id, eq, r } of fps) {
-      if (id === owner.id || isMounted(scene, owner, eq)) continue
+      if (id === owner.id || isMounted(scene, owner, eq) || overhead.floorClearance(owner, eq)) continue
       const regions = zone.map((z) => rectOverlap(z, r)).filter((q): q is Rect => q !== null)
       if (regions.length > 0) out.push({ kind: 'clearance', owner: owner.id, equipment: id, regions })
     }
