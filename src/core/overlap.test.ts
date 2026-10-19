@@ -238,6 +238,12 @@ describe('頭上の取出機と床の設備', () => {
     expect(o.filter((x) => x.kind === 'clearance').map((x) => x.kind === 'clearance' && `${x.owner}>${x.equipment}`)).toEqual(['d>d2', 'd2>d'])
   })
 
+  it('同じユニットの取出機どうしは示す', () => {
+    const r2 = { ...robot, id: 'r2', name: 'r2', x: robot.x + 400 }
+    const o = findOverlaps({ ...scene([machine, robot, r2]), links: [{ from: 'm', to: 'r' }, { from: 'm', to: 'r2' }] })
+    expect(o.filter((x) => x.kind === 'equipment').map((x) => x.kind === 'equipment' && `${x.a}+${x.b}`)).toEqual(['r+r2'])
+  })
+
   it('通路とは今までどおり示す', () => {
     const o = findOverlaps({ ...scene([machine, robot, degating], [aisle('a', [[5000, 4200], [9000, 4200]])]), ...units })
     expect(o.map((x) => x.kind === 'aisle' && x.equipment)).toEqual(['r', 'd'])

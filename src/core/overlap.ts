@@ -174,7 +174,8 @@ function overheadPairs(scene: Scene): { sameUnit: (a: Equipment, b: Equipment) =
   const mounted = (e: Equipment) => findTemplate(scene.templates, e.kind)?.role === 'mounted'
   return {
     sameUnit: (a, b) => {
-      if (!mounted(a) && !mounted(b)) return false
+      // 頭上と床の組だけ。同じユニットの頭上どうし（取出機 2 台など）は示す
+      if (mounted(a) === mounted(b)) return false
       const u = unitOf.get(a.id)
       return u !== undefined && u === unitOf.get(b.id)
     },
