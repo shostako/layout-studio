@@ -243,7 +243,7 @@ def reachable(el, zones, base=None):
 
 
 def connect(el, zones):
-    """道を引く。返り値: (道の四角, 成形機の通路からの道の長さ, 区画ごとのシャッターまでの道のり mm) か None"""
+    """道を引く。返り値: (成形機の通路からの道の四角, 保管の区画からの道の四角, 成形機の通路からの道の長さ, 区画ごとのシャッターまでの道のり mm) か None"""
     carts = [c for z in zones for c in z['carts']]
     ok = agv_ok(el, carts)
     dist, par = bfs(ok)
@@ -263,7 +263,7 @@ def connect(el, zones):
     segs, rlen = trace(dist, par, starts)
     zsegs, _ = trace(dist, par, zs)
     zdist = [dist[s] * GRID + AISLE / 2 for s in zs]
-    return segs + zsegs, rlen, zdist
+    return segs, zsegs, rlen, zdist
 
 
 def storage(el, route_segs):
@@ -314,18 +314,18 @@ def evaluate(c):
     st = storage(c['el'], segs)
     if st is None:
         return None
-    n, zones, (rsegs, rlen2, zdist) = st
+    n, zones, (rsegs, zsegs, rlen2, zdist) = st
     for z, d in zip(zones, zdist):
         z['dist'] = d
     zones.sort(key=lambda z: z['dist'])
     c['zones'] = zones
     c['carts'] = n
-    c['route'] = rsegs
+    c['route'] = rsegs + zsegs     # 描く道: 成形機の通路から＋保管の区画から
     c['route_len'] = rlen2
-    c['occ'] = gs.occupied(c['el'], rsegs)
+    c['occ'] = gs.occupied(c['el'], rsegs)   # 成形機まわり: 成形機の通路からシャッターまでの道だけを含める
     c['agv_len'] = gs.aisle_len(c['el']) + rlen2
     c['store_area'] = gen.union_area([z['rect'] for z in zones])
-    c['used'] = gs.occupied(c['el'], rsegs + [z['rect'] for z in zones])
+    c['used'] = gs.occupied(c['el'], rsegs + zsegs + [z['rect'] for z in zones])
     # シャッターの中心から 15 m 以内（台車の中心までの直線）の台数
     sx, sy = SITE_W, (SHUTTER[0] + SHUTTER[1]) / 2
     c['near'] = sum(1 for z in zones for q in z['carts'] if math.hypot((q[0] + q[2]) / 2 - sx, (q[1] + q[3]) / 2 - sy) <= NEAR)
