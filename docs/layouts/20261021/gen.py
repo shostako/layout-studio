@@ -14,7 +14,7 @@ import math
 import os
 from dataclasses import dataclass, field
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '外形なし')
 
 # ---- 成形機と設備の帯（依頼の値。局所座標: u は型締側の端から射出側へ、v は中心軸から操作側を正）----
 L = 11453            # 全長
