@@ -30,11 +30,11 @@ from gen_site import SITE_W, SITE_H, NOTCH_X, NOTCH_Y, SHUTTER, GRID, AGV_CLEAR,
 from gen_storage import X, Y, NX, NY, rect_mask, site_mask, pack, largest_rect, WALL_MARGIN, APRON_R  # noqa: E402
 
 # ---- 仕切り（防火壁）と開口 ----
-WALL = (15400, 15600)                  # X3。厚さ 200 を仮定（中心は工場2 の幅 15.5 m の線）
-F1 = (WALL[1], 0, SITE_W, SITE_H)      # 工場1 の床 19.9 × 45.7 m
-F2 = (0, NOTCH_Y, WALL[0], SITE_H)     # 工場2 の床 15.4 × 39.3 m
+WALL = (15300, 16200)                  # X3。壁の厚みと東側に約 0.7 m 出る柱をまとめた置けない帯（../20261021-防火壁/ と同じ）
+F1 = (WALL[1], 0, SITE_W, SITE_H)      # 工場1 の床 19.3 × 45.7 m
+F2 = (0, NOTCH_Y, WALL[0], SITE_H)     # 工場2 の床 15.3 × 39.3 m
 OPENINGS = [('北', (7400, 10600)), ('南', (38900, 42200))]   # 防火シャッターの開口（工場1 の北壁からの y）
-OPEN_CLEAR = 2000                      # 開口の両側に物を置かない奥行（シャッターの降下と AGV の出入り）
+OPEN_CLEAR = 2500                      # 開口の両側に物を置かない奥行（シャッターの降下と AGV の出入り。../20261021-防火壁/ と同じ）
 OPEN_SIDE = 500                        # 同じく、開口の幅の上下に足す分
 N = 6
 H = AISLE / 2
@@ -137,10 +137,11 @@ def candidates():
                     if w > fw or hh > fh:
                         continue
                     tys = sorted(set(list(range(0, int(fh - hh) + 1, 1000)) + [fh - hh]))
-                    for tx in sorted({F1[0], F1[2] - w}):
+                    for tx in sorted(set(range(int(F1[0]), int(F1[2] - w), 500)) | {F1[2] - w}):
                         for ty in tys:
                             el = gs.transform(el0, rot, tx, ty)
-                            if all(in_rect(e[1], F1) for e in el if e[0] in gs.FIT_KINDS):
+                            if all(in_rect(e[1], F1) for e in el if e[0] in gs.FIT_KINDS) and not any(
+                                    gen.overlaps(e[1], a) for e in el if e[0] in ('machine', 'part', 'lane') for a in APRONS):
                                 res.append(dict(structure=sname, spec=spec, pattern=p, typeset=ts, rot=rot, tx=tx, ty=ty,
                                                 el=el, meta=meta, w=w, h=hh))
     return res
@@ -270,8 +271,11 @@ def evaluate(c, f2opts):
     return c
 
 
+DETOUR = 35000   # 成形機→開口と工場2→シャッターの合計がこれを超える置き方は、台車が多くても後ろに回す
+
+
 def key(c):
-    return (-c['carts2'], -c['carts1'], c['m_o'] + c['s_e'])
+    return (-c['carts2'], c['m_o'] + c['s_e'] > DETOUR, -c['carts1'], c['m_o'] + c['s_e'])
 
 
 def pick(cs):
